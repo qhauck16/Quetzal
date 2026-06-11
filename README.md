@@ -117,9 +117,8 @@ factorisation used by every downstream Quetzal analysis.
 
 ## Citation
 
-If you use Quetzal, please cite the release tag you used --
-machine-readable metadata is in [CITATION.cff](CITATION.cff). A Zenodo
-DOI is minted automatically for each tagged release.
+If you use Quetzal, please cite the release tag you used; machine-readable
+metadata is in [CITATION.cff](CITATION.cff).
 
 ## License
 
