@@ -64,20 +64,33 @@ conda activate quetzal-r
 used at the v0.1 freeze. If you only want a specific stage you can skip
 either of the snakefile envs -- they alias the central yml.
 
-## End-to-end run (TCGA)
+## Methods
 
-The full pipeline has two stages with independent Snakemake workflows.
+Quetzal ships two **independent** methods. They both consume the same
+input (per-chromosome snaptron junction tables) and they both fit
+Poisson NMFs per gene, but they answer different questions and neither
+depends on the other's output. Run one, the other, or both, depending
+on what you need.
 
-### 1. Per-chromosome junction files (v0.1 assumes Snaptron-format) -> fastTopics (genome-wide)
+| Method | Question it answers | Driver | Output location |
+| --- | --- | --- | --- |
+| **Genome-wide** | "What are the cohort-driving splicing factor programs across all of TCGA?" -- yields one sample x factor matrix (the GSPs) covering every gene at once | `scripts/genome_wide/lf_Snakefile` + `scripts/genome_wide/fasttopics_to_flashier.R` | `output/genome_wide/` |
+| **Gene-level** | "For one specific gene, what are its factorised splicing programs and which TCGA cancer types are they enriched in?" -- yields per-gene plots, DE results, and cancer-cohort tests | `scripts/gene_level/Snakefile` (`gene_plots_and_objs.R` + `cancer_specific_factors.R`) | `output/gene_level/` |
 
-`scripts/genome_wide/lf_Snakefile` consumes one chromosome's snaptron
-junction tables (produced upstream from recount3 / Snaptron) and writes
-a fastTopics factorisation per gene under
-`scripts/genome_wide/<chr>/FastTopics_output/<gene>/res.RDS`.
+The two pipelines fit independent Poisson NMFs. The genome-wide one
+caps at 32 factors per gene and feeds those into a downstream
+softImpute + flashier collapse to a single 300-factor matrix. The
+gene-level one caps at 10 factors per gene for cleaner per-gene
+visualisation and runs its own DE / cancer-type tests on top.
 
-The Snakefile takes the current working directory's basename as the
-chromosome label, so the standard invocation is one Snakemake job per
-chromosome from a `chr<N>/` subdir of `scripts/genome_wide/`:
+### Genome-wide method
+
+**Step A (Snakemake).** `scripts/genome_wide/lf_Snakefile` consumes one
+chromosome's snaptron junction tables and writes a per-gene fastTopics
+factorisation. The Snakefile takes the current working directory's
+basename as the chromosome label, so the standard invocation is one
+Snakemake job per chromosome from a `chr<N>/` subdir of
+`scripts/genome_wide/`:
 
 ```bash
 cd scripts/genome_wide
@@ -86,9 +99,8 @@ cd chr5
 snakemake -s lf_Snakefile --use-conda --jobs <N>   # add your scheduler flags
 ```
 
-External requirement: `data/all_genes/<chr>/snaptron_output/<gene>_snaptron.tsv`
-for every gene you want factorised. v0.1 expects this path to exist;
-v1.0 will ship a generator/loader for it.
+Outputs land at
+`output/genome_wide/<chr>/FastTopics_output/<gene>/res.RDS`.
 
 v0.1 ships no required dispatch wrapper -- parallelise across
 chromosomes however your cluster prefers (SLURM array, snakemake
@@ -98,38 +110,51 @@ edit the two SLURM placeholders at the top of the script (or rewrite
 the snakemake invocation for your scheduler) before running.
 v1.0 will provide a built-in dispatcher.
 
-### 2. Per-gene Poisson NMF + DE (gene-level)
+**Step B (R script).** Once Step A has populated
+`output/genome_wide/<chr>/FastTopics_output/`, collapse every per-gene
+result into one sample x feature matrix (keeping only factors that
+load mostly on unannotated junctions), QC-filter samples on
+RIN / %C / junction count / avgQ / unique-mapped % / unproductive-
+productive ratio, fill missing values with `softImpute`, and fit a
+300-factor `flashier::flash`:
 
-`scripts/gene_level/Snakefile` reads each gene's fastTopics output from
-step 1 and runs `gene_plots_and_objs.R` (Poisson NMF + DE) then
-`cancer_specific_factors.R` (beta-binomial cohort test):
+```bash
+conda activate quetzal-r        # only the R env, no snakemake needed
+Rscript scripts/genome_wide/fasttopics_to_flashier.R \
+    --gene_dir       output/genome_wide \
+    --snaptron_root  data/all_genes \
+    --tcga_meta      data/tcga_v2_samples.tsv \
+    --analyte        data/analyte.tsv \
+    --pu_dir         data/productive_unproductive \
+    --features_out   output/genome_wide/softimpute_features.tsv \
+    --flash_out      output/genome_wide/softimpute_flash_300_qc_filtered.RDS
+```
+
+`softimpute_flash_300_qc_filtered.RDS` is the genome-wide factorisation
+used by every downstream Quetzal analysis.
+
+External requirement: `data/all_genes/<chr>/snaptron_output/<gene>_snaptron.tsv`
+for every gene you want factorised. v0.1 expects this path to exist;
+v1.0 will ship a generator/loader for it.
+
+### Gene-level method
+
+`scripts/gene_level/Snakefile` fits its own per-gene Poisson NMF
+(low-k, for visualisation), runs differential expression on the
+factors, then tests each factor for enrichment in TCGA cancer cohorts:
 
 ```bash
 cd scripts/gene_level
 snakemake --use-conda --jobs <N>   # add your scheduler flags
 ```
 
-### 3. Gene-level -> genome-wide flashier
+Outputs land at `output/gene_level/<chr>/<gene>/`:
+`res.RDS`, `de_res.RDS`, `whole_factor.html`, `results.tsv`,
+`junction_results.tsv`, `n_bb_tests.tsv`.
 
-`scripts/genome_wide/fasttopics_to_flashier.R` collapses every per-gene
-result into one sample x feature matrix (only factors that load mostly
-on unannotated junctions), QC-filters samples on RIN / %C / junction
-count / avgQ / unique-mapped % / unproductive-productive ratio, fills
-missing values with `softImpute`, and fits a 300-factor `flashier::flash`:
-
-```bash
-Rscript scripts/genome_wide/fasttopics_to_flashier.R \
-    --gene_dir   ../260116_filters \
-    --snaptron_root ../../all_genes \
-    --tcga_meta  data/tcga_v2_samples.tsv \
-    --analyte    data/analyte.tsv \
-    --pu_dir     data/productive_unproductive \
-    --features_out softimpute_features.tsv \
-    --flash_out  softimpute_flash_300_qc_filtered.RDS
-```
-
-The final `softimpute_flash_300_qc_filtered.RDS` is the genome-wide
-factorisation used by every downstream Quetzal analysis.
+This method is independent of the genome-wide method -- it does **not**
+consume `output/genome_wide/`. Run it whenever you want a per-gene view
+without first running the full genome-wide pipeline.
 
 ## License
 
