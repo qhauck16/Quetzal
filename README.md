@@ -20,7 +20,6 @@ Quetzal/
 │   ├── gene_level/
 │   │   ├── Snakefile             # per-gene Poisson NMF Snakemake workflow
 │   │   ├── gene_plots_and_objs.R # fits Poisson NMF + DE per gene
-│   │   ├── cancer_specific_factors.R
 │   │   └── envs/rscript.yml      # symlink-equivalent to ../../environment/quetzal-r.yml
 │   └── genome_wide/
 │       ├── lf_Snakefile               # leafcutter -> per-gene fastTopics (run once per chr)
@@ -75,13 +74,13 @@ on what you need.
 | Method | Question it answers | Driver | Output location |
 | --- | --- | --- | --- |
 | **Genome-wide** | "What are the cohort-driving splicing factor programs across all of TCGA?" -- yields one sample x factor matrix (the GSPs) covering every gene at once | `scripts/genome_wide/lf_Snakefile` + `scripts/genome_wide/fasttopics_to_flashier.R` | `output/genome_wide/` |
-| **Gene-level** | "For one specific gene, what are its factorised splicing programs and which TCGA cancer types are they enriched in?" -- yields per-gene plots, DE results, and cancer-cohort tests | `scripts/gene_level/Snakefile` (`gene_plots_and_objs.R` + `cancer_specific_factors.R`) | `output/gene_level/` |
+| **Gene-level** | "For one specific gene, what are its factorised splicing programs?" -- yields per-gene plots and DE results for visual inspection | `scripts/gene_level/Snakefile` (`gene_plots_and_objs.R`) | `output/gene_level/` |
 
 The two pipelines fit independent Poisson NMFs. The genome-wide one
 caps at 32 factors per gene and feeds those into a downstream
 softImpute + flashier collapse to a single 300-factor matrix. The
 gene-level one caps at 10 factors per gene for cleaner per-gene
-visualisation and runs its own DE / cancer-type tests on top.
+visualisation and runs its own DE tests on top.
 
 ### Genome-wide method
 
@@ -140,8 +139,8 @@ v1.0 will ship a generator/loader for it.
 ### Gene-level method
 
 `scripts/gene_level/Snakefile` fits its own per-gene Poisson NMF
-(low-k, for visualisation), runs differential expression on the
-factors, then tests each factor for enrichment in TCGA cancer cohorts:
+(low-k cap, for visualisation) and runs differential expression on the
+factors:
 
 ```bash
 cd scripts/gene_level
@@ -149,8 +148,7 @@ snakemake --use-conda --jobs <N>   # add your scheduler flags
 ```
 
 Outputs land at `output/gene_level/<chr>/<gene>/`:
-`res.RDS`, `de_res.RDS`, `whole_factor.html`, `results.tsv`,
-`junction_results.tsv`, `n_bb_tests.tsv`.
+`res.RDS`, `de_res.RDS`, `whole_factor.html`.
 
 This method is independent of the genome-wide method -- it does **not**
 consume `output/genome_wide/`. Run it whenever you want a per-gene view
