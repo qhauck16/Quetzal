@@ -39,33 +39,6 @@ lfc_thresh <- as.numeric(args[14])
 abs_thresh <- as.numeric(args[15])
 sval_thresh <- as.numeric(args[16])
 
-# #arguments for generating dat
-# min_junctions_for_pca <- 3
-# gene_range_bound <- 2000
-# avg_clust_read_count_min <- 5
-# input_file <- '../all_genes/chr17/snaptron_output/NF1_snaptron.tsv'
-# min_samples_per_junc <- 10
-# avg_sample_reads_per_cluster <- 5
-# 
-# 
-# gencode <- readRDS('../hg38_granges.RDS')
-# tcga_metadata <- fread('../tcga_v2_samples.tsv', data.table = F)
-# gtex_metadata <- fread('../../gtexv2_metadata.tsv')
-# threads <- 28
-# 
-# elbow_cutoff <- 0.99
-# max_factors <- 10
-# lfc_thresh <- 2
-# abs_thresh <- 0.01
-# sval_thresh <- 0.05
-# factor_corr_thresh <- 1E-10
-# rare_factor_thresh <- 0.05
-# gene_dir <- '../genome_wide/250916_filters/'
-# gtex_dat_dir <- '../../gtex/genome_wide/250929_filters/'
-# gene_name <- 'NF1'
-# chr <- 'chr17'
-# psi_dir <- '../leafcutter/psi_files/'
-
 
 if(!dir.exists(paste0( chr, '/', gene_name))){
   dir.create(paste0( chr, '/', gene_name))

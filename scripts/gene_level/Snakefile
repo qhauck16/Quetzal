@@ -29,7 +29,7 @@ COVARIATE_TABLE = "../standardized_covariates.RDS"
 THREADS = 10
 
 # Factorization thresholds
-ELBOW_CUTOFF = 0.99
+ELBOW_CUTOFF = 0.01
 MAX_FACTORS = 10
 LFC_THRESH = 2
 ABS_THRESH = 0.01
