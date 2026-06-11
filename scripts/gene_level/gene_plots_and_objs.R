@@ -209,20 +209,6 @@ if (file.size(input_file) < 100L){
             #a sample only has reads in an unsupported junction
             filtered_intron_cluster <- filtered_intron_cluster[, colSums(filtered_intron_cluster) > 0]
             
-            #normalize junctions by total counts to 'equally weight' samples in PCA
-            normalized_junctions <- t(t(filtered_intron_cluster[1:(ncol(filtered_intron_cluster)-1)])/colSums(filtered_intron_cluster[1:(ncol(filtered_intron_cluster)-1)]))
-            
-            #use number of principal components to reach a certain explained variance to bound how large of a k to use
-            pc_for_elbow <- prcomp(t(normalized_junctions))
-            proportion_of_var <- summary(pc_for_elbow)$importance[2,]
-            proportion_of_var <- as.numeric(proportion_of_var)
-            cumul_var <- cumsum(proportion_of_var)
-            
-            ideal_factors <- length(proportion_of_var) - sum(cumul_var > (1-elbow_cutoff))
-            
-            #CHOOSING NUMBER OF FACTORS
-            num_factors <- max(2, min(max_factors, ideal_factors))
-            
             dat <- t(as.matrix(filtered_intron_cluster[,1:(ncol(filtered_intron_cluster)-1)]))
             dat <- as.data.frame(dat)
             
@@ -287,17 +273,19 @@ best_fit_L <- function(results, data_to_fit){
 # data processing ---------------------------------------------------------
 
 
-#choosing number of factors to use for visualization
-normalized_junctions <- dat/rowSums(dat)
-pc_for_elbow <- prcomp(normalized_junctions)
-proportion_of_var <- summary(pc_for_elbow)$importance[2,]
-proportion_of_var <- as.numeric(proportion_of_var)
-cumul_var <- cumsum(proportion_of_var)
+# Use the number of PCs needed to reach (1 - elbow_cutoff) cumulative
+# variance as an upper bound on the k passed to Poisson NMF. With
+# elbow_cutoff = 0.01 the threshold is 0.99 -- we want to count the PCs
+# whose cumulative variance is BELOW that threshold (plus the one that
+# crosses it), not above. The earlier `cumul_var > elbow_cutoff` bug
+# inverted this and collapsed every gene to k = 2.
+normalized_junctions <- dat / rowSums(dat)
+pc_for_elbow         <- prcomp(normalized_junctions)
+proportion_of_var    <- as.numeric(summary(pc_for_elbow)$importance[2, ])
+cumul_var            <- cumsum(proportion_of_var)
 
-ideal_factors <- length(proportion_of_var) - sum(cumul_var > elbow_cutoff)
-
-#CHOOSING NUMBER OF FACTORS
-num_factors <- max(2, min(max_factors, ideal_factors))
+ideal_factors <- length(proportion_of_var) - sum(cumul_var > (1 - elbow_cutoff))
+num_factors   <- max(2, min(max_factors, ideal_factors))
 
 #setting up res objects and saving them
 new_res <- poisson2multinom(fit_poisson_nmf(dat, num_factors, control = list('nc' = threads)))
