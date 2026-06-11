@@ -8,8 +8,7 @@ into downstream alternative-splicing analyses.
 
 This repository is the **v0.1** release used for the manuscript. The
 pipelines and reference data here are TCGA-specific; v1.0 will generalise
-the sample-metadata assumptions. See [CHANGELOG.md](CHANGELOG.md) for the
-roadmap.
+the sample-metadata assumptions.
 
 ## Repository layout
 
@@ -24,8 +23,7 @@ Quetzal/
 │   │   ├── cancer_specific_factors.R
 │   │   └── envs/rscript.yml      # symlink-equivalent to ../../environment/quetzal-r.yml
 │   └── genome_wide/
-│       ├── lf_Snakefile          # leafcutter -> per-gene fastTopics
-│       ├── setting_up_snakemake.sh
+│       ├── lf_Snakefile          # leafcutter -> per-gene fastTopics (run once per chr)
 │       ├── tcga_LF_saving.R
 │       ├── fasttopics_to_flashier.R   # full FastTopics -> softImpute -> flashier
 │       └── envs/fasttopics.yml
@@ -67,20 +65,29 @@ The full pipeline has two stages with independent Snakemake workflows.
 
 ### 1. Per-chromosome leafcutter -> fastTopics (genome-wide)
 
-`scripts/genome_wide/lf_Snakefile` consumes snaptron junction tables
-(produced upstream from recount3/Snaptron) and writes a fastTopics
-factorisation per (chr, gene). The wrapper script
-`setting_up_snakemake.sh` materialises one chromosome subdirectory per
-chr and submits one Snakemake job per chr to SLURM:
+`scripts/genome_wide/lf_Snakefile` consumes one chromosome's snaptron
+junction tables (produced upstream from recount3 / Snaptron) and writes
+a fastTopics factorisation per gene under
+`scripts/genome_wide/<chr>/FastTopics_output/<gene>/res.RDS`.
+
+The Snakefile takes the current working directory's basename as the
+chromosome label, so the standard invocation is one Snakemake job per
+chromosome from a `chr<N>/` subdir of `scripts/genome_wide/`:
 
 ```bash
 cd scripts/genome_wide
-bash setting_up_snakemake.sh
+mkdir chr5 && cp lf_Snakefile chr5/
+cd chr5
+snakemake -s lf_Snakefile --use-conda --jobs <N>   # add your scheduler flags
 ```
 
-External requirement: `../../all_genes/chr<N>/snaptron_output/<GENE>_snaptron.tsv`
+External requirement: `data/all_genes/<chr>/snaptron_output/<gene>_snaptron.tsv`
 for every gene you want factorised. v0.1 expects this path to exist;
-v1.0 will ship a generator / loader for it.
+v1.0 will ship a generator/loader for it.
+
+v0.1 deliberately ships no dispatch wrapper — parallelise across
+chromosomes however your cluster prefers (SLURM array, snakemake
+profile, a `for` loop, ...). v1.0 will provide a built-in dispatcher.
 
 ### 2. Per-gene Poisson NMF + DE (gene-level)
 
@@ -90,7 +97,7 @@ step 1 and runs `gene_plots_and_objs.R` (Poisson NMF + DE) then
 
 ```bash
 cd scripts/gene_level
-snakemake --executor slurm --default-resources slurm_partition=broadwl slurm_account=pi-yangili1 --jobs 90 --use-conda --rerun-incomplete --restart-times 3
+snakemake --use-conda --jobs <N>   # add your scheduler flags
 ```
 
 ### 3. Gene-level -> genome-wide flashier
