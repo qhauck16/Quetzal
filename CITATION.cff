@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "Quetzal: per-gene Poisson NMF + genome-wide flashier factorisation of TCGA RNA splicing"
+message: "If you use Quetzal, please cite this software."
+type: software
+authors:
+  - given-names: Quinn
+    family-names: Hauck
+    email: qhauck@uchicago.edu
+    affiliation: "University of Chicago"
+version: "0.1.0"
+date-released: "2026-06-11"
+license: MIT
+repository-code: ""   # fill in once the GitHub URL exists
+url: ""               # same
+keywords:
+  - alternative-splicing
+  - rna-seq
+  - tcga
+  - leafcutter
+  - poisson-nmf
+  - matrix-factorization
+  - flashier
+abstract: >
+  Quetzal builds a per-gene Poisson NMF over leafcutter junction counts
+  for every gene in TCGA and lifts the resulting cohort-driving factors
+  into a single genome-wide flashier factorisation. Output factors
+  ("GSPs") recover known splicing factor disruption programs and
+  highlight novel cohort-specific events.
