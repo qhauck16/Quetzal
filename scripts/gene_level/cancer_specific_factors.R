@@ -27,9 +27,13 @@ min_num_in_cancer     <- as.integer(args[13])
 chr                   <- args[14]
 gene_name             <- args[15]
 gtex_dat_dir          <- args[16]
+# Optional output_base prefix (args[17]); when given, OUTPUT writes go
+# under it. `chr` itself stays raw because lines 185/301/302 use it as
+# part of INPUT paths (gtex_dat_dir/<chr>, psi_dir/<source>/<chr>).
+output_base           <- if (length(args) >= 17 && nzchar(args[17])) args[17] else "."
 
 # ---- Output paths ------------------------------------------------
-out_dir       <- file.path(chr, gene_name)
+out_dir       <- file.path(output_base, chr, gene_name)
 results_path  <- file.path(out_dir, "results.tsv")
 junction_path <- file.path(out_dir, "junction_results.tsv")
 n_bb_path     <- file.path(out_dir, "n_bb_tests.tsv")

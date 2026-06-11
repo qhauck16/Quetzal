@@ -5,8 +5,10 @@ from glob import glob
 # --------------- CONFIG -------------------
 ############################################
 
-# Bases
-SNAPTRON_BASE = "../all_genes"
+# Paths relative to scripts/gene_level/ (the Snakemake invocation cwd).
+# Outputs land under <repo>/output/gene_level/<chr>/<gene>/.
+SNAPTRON_BASE = "../../data/all_genes"
+OUTPUT_BASE   = "../../output/gene_level"
 
 # Scripts
 SCRIPT1 = "gene_plots_and_objs.R"
@@ -16,13 +18,15 @@ SCRIPT2 = "cancer_specific_factors.R"
 OUTPUT1_SUFFIXES = ["res.RDS", "de_res.RDS", "whole_factor.html"]
 OUTPUT2_SUFFIX = "results.tsv"
 
-# Static inputs
-GTEX_DAT_DIR = "../../gtex/genome_wide/260120_filters/"
-PSI_DIR = "../leafcutter/leaf2_try/new_psi_files"
-GENCODE = "../hg38_granges.RDS"
-TCGA_METADATA = "../tcga_v2_samples.tsv"
-GTEX_METADATA = "../../gtexv2_metadata.tsv"
-RIN_SCORE_FILE = "analyte.tsv"
+# Static inputs (data/ at the repo root unless noted)
+GENCODE         = "../../data/hg38_granges.RDS"
+TCGA_METADATA   = "../../data/tcga_v2_samples.tsv"
+RIN_SCORE_FILE  = "../../data/analyte.tsv"
+# External v0.1 requirements -- user must point these at their copies.
+# v1.0 will distribute / auto-fetch them.
+GTEX_DAT_DIR    = "../../gtex/genome_wide/260120_filters/"
+PSI_DIR         = "../leafcutter/leaf2_try/new_psi_files"
+GTEX_METADATA   = "../../gtexv2_metadata.tsv"
 COVARIATE_TABLE = "../standardized_covariates.RDS"
 
 # Resources
@@ -51,7 +55,7 @@ N_TCGA_COHORTS = 33   # used in the lm-Bonferroni denominator below
 # count and the threshold tightens to a stable value.
 def count_processed_genes():
     count = 0
-    for chr_dir in sorted(glob("chr*")):
+    for chr_dir in sorted(glob(os.path.join(OUTPUT_BASE, "chr*"))):
         for gene_dir in glob(os.path.join(chr_dir, "*")):
             res_path = os.path.join(gene_dir, "res.RDS")
             if os.path.exists(res_path) and os.path.getsize(res_path) > 100:
@@ -98,13 +102,13 @@ def get_genes():
 GENE_INFO = get_genes()
 
 GENE_OUTPUTS_SCRIPT1 = [
-    f"{chr}/{gene}/{suffix}"
+    f"{OUTPUT_BASE}/{chr}/{gene}/{suffix}"
     for chr, gene in GENE_INFO
     for suffix in OUTPUT1_SUFFIXES
 ]
 
 GENE_OUTPUTS_SCRIPT2 = [
-    f"{chr}/{gene}/{OUTPUT2_SUFFIX}"
+    f"{OUTPUT_BASE}/{chr}/{gene}/{OUTPUT2_SUFFIX}"
     for chr, gene in GENE_INFO
 ]
 
@@ -126,9 +130,9 @@ rule run_gene_plots_and_objs:
     input:
         snaptron=SNAPTRON_BASE + "/{chr}/snaptron_output/{gene}_snaptron.tsv"
     output:
-        res="{chr}/{gene}/res.RDS",
-        de_res="{chr}/{gene}/de_res.RDS",
-        whole_factor="{chr}/{gene}/whole_factor.html"
+        res         = OUTPUT_BASE + "/{chr}/{gene}/res.RDS",
+        de_res      = OUTPUT_BASE + "/{chr}/{gene}/de_res.RDS",
+        whole_factor= OUTPUT_BASE + "/{chr}/{gene}/whole_factor.html"
     params:
         # dat-generation params
         min_junctions_for_pca=MIN_JUNCTIONS_FOR_PCA,
@@ -146,7 +150,8 @@ rule run_gene_plots_and_objs:
         lfc_thresh=LFC_THRESH,
         abs_thresh=ABS_THRESH,
         sval_thresh=SVAL_THRESH,
-        script=SCRIPT1
+        script=SCRIPT1,
+        output_base=OUTPUT_BASE
     conda:
         "envs/rscript.yml"
     threads: 10
@@ -155,7 +160,7 @@ rule run_gene_plots_and_objs:
     shell:
         """
         set -euo pipefail
-        mkdir -p {wildcards.chr}/{wildcards.gene}
+        mkdir -p {params.output_base}/{wildcards.chr}/{wildcards.gene}
 
         Rscript {params.script} \
             {params.min_junctions_for_pca} \
@@ -174,6 +179,7 @@ rule run_gene_plots_and_objs:
             {params.lfc_thresh} \
             {params.abs_thresh} \
             {params.sval_thresh} \
+            {params.output_base}
         """
 
 
@@ -183,13 +189,13 @@ rule run_gene_plots_and_objs:
 
 rule run_cancer_specific_factors:
     input:
-        res="{chr}/{gene}/res.RDS",
-        de_res="{chr}/{gene}/de_res.RDS",
-        covars=COVARIATE_TABLE
+        res    = OUTPUT_BASE + "/{chr}/{gene}/res.RDS",
+        de_res = OUTPUT_BASE + "/{chr}/{gene}/de_res.RDS",
+        covars = COVARIATE_TABLE
     output:
-        results   = "{chr}/{gene}/results.tsv",
-        junctions = "{chr}/{gene}/junction_results.tsv",
-        n_bb      = "{chr}/{gene}/n_bb_tests.tsv"
+        results   = OUTPUT_BASE + "/{chr}/{gene}/results.tsv",
+        junctions = OUTPUT_BASE + "/{chr}/{gene}/junction_results.tsv",
+        n_bb      = OUTPUT_BASE + "/{chr}/{gene}/n_bb_tests.tsv"
     params:
         tcga_metadata=TCGA_METADATA,
         gtex_metadata=GTEX_METADATA,
@@ -204,7 +210,8 @@ rule run_cancer_specific_factors:
         psi_pval_thresh=PSI_PVAL_THRESH,
         min_num_in_cancer=MIN_NUM_IN_CANCER,
         script=SCRIPT2,
-        gtex_dat_dir=GTEX_DAT_DIR
+        gtex_dat_dir=GTEX_DAT_DIR,
+        output_base=OUTPUT_BASE
     conda:
         "envs/rscript.yml"
     resources:
@@ -212,7 +219,7 @@ rule run_cancer_specific_factors:
     shell:
         """
         set -euo pipefail
-        mkdir -p {wildcards.chr}/{wildcards.gene}
+        mkdir -p {params.output_base}/{wildcards.chr}/{wildcards.gene}
 
         Rscript {params.script} \
             {input.res} \
@@ -230,6 +237,7 @@ rule run_cancer_specific_factors:
             {params.min_num_in_cancer} \
             {wildcards.chr} \
             {wildcards.gene} \
-            {params.gtex_dat_dir}
+            {params.gtex_dat_dir} \
+            {params.output_base}
         """
 
