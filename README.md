@@ -1,166 +1,261 @@
 # Quetzal
 
-Per-gene Poisson NMF + genome-wide flashier factorisation of TCGA splice
-junctions. Quetzal recovers known splicing-factor mutation programs
-(e.g. SF3B1) directly from leafcutter junction counts and surfaces
-cohort-specific factors as a single sample x factor matrix that plugs
-into downstream alternative-splicing analyses.
+Per-gene Poisson NMF and genome-wide flashier factorisation of RNA-seq
+splice junctions. Quetzal turns junction-count matrices into
+sample × factor matrices that surface cohort-driving splicing programs
+(e.g. SF3B1 mutation signatures) on their own.
 
-This repository is the **v0.1** release used for the manuscript. The
-pipelines and reference data here are TCGA-specific; v1.0 will generalise
-the sample-metadata assumptions.
+v1.0 generalises Quetzal beyond TCGA+Snaptron: it runs on user-supplied
+per-gene junction matrices in addition to snaptron's TSVs, drops every
+TCGA-specific QC step, and lets you opt in (or out) of normal-sample
+filtering and structure-plot grouping via a single configfile. v0.1
+(the manuscript build) is frozen at the `v0.1.0` tag —
+`git checkout v0.1.0` if you need that exact pipeline.
+
+## Quickstart
+
+```bash
+git clone https://github.com/qhauck16/Quetzal.git
+cd Quetzal
+
+# (snaptron input only) fetch the TCGA-v2 sample manifest -- not shipped
+curl -L -o data/tcga_v2_samples.tsv \
+     https://snaptron.cs.jhu.edu/data/tcgav2/samples.tsv
+
+# (snaptron input only) drop per-chr snaptron tables under data/all_genes/<chr>/
+# (user-supplied gene_matrix input goes under the same dir; see below)
+
+# pick your mode + run. Snakemake builds the conda env via --use-conda.
+cd scripts/genome_wide      # or scripts/gene_level
+snakemake --configfile ../../config/default_config.yaml --use-conda --jobs <N>
+```
+
+## Two modes
+
+Run one, the other, or both. Both modes share canonical per-gene
+intermediates so the input-format and filter choices look the same in
+either mode.
+
+| Mode | Question it answers | Driver | Final output |
+| --- | --- | --- | --- |
+| **gene_level** | "For one specific gene, what are its factorised splicing programs?" -- per-gene plots and DE results for visual inspection | `scripts/gene_level/Snakefile` | `output/gene_level/<chr>/<gene>/whole_factor.html` (+ `res.RDS`, `de_res.RDS`, `de_factor.html`) |
+| **genome_wide** | "What are the cohort-driving splicing programs across all genes?" -- one sample × factor matrix that covers the entire input | `scripts/genome_wide/Snakefile` | `output/genome_wide/softimpute_flash.RDS` (+ per-gene `res.RDS`, `unann_factors.tsv`) |
+
+Both fit independent Poisson NMFs per gene. The gene_level mode caps
+`k` at 10 by default for cleaner visualisation; the genome_wide mode
+caps higher (32 is typical) and feeds those factors into a downstream
+softImpute + flashier collapse. Toggle via the configfile.
+
+## Two input formats
+
+Picked at run time via the `input_format` key in your config:
+
+```yaml
+input_format: snaptron       # OR: gene_matrix
+input_dir:    data/all_genes # both formats expect per-chromosome subdirs
+```
+
+### `snaptron` (default)
+
+Per-gene snaptron TSV at
+`<input_dir>/<chr>/snaptron_output/<gene>_snaptron.tsv`. The required
+columns are the standard snaptron set:
+
+```
+chromosome  start  end  strand  samples  samples_count  annotated  ...
+```
+
+The `samples` column is the packed `,railid1:count1,railid2:count2,...`
+string. `annotated` (0/1) is taken straight from snaptron and is the
+basis for `extract_unann_factors.R`'s annotated/unannotated split.
+
+### `gene_matrix` (user-supplied)
+
+Per-gene wide TSV at `<input_dir>/<chr>/<gene>.tsv`:
+
+```
+junction_id              S1   S2   S3   ...
+chr5:106932115-106934550:+  4   13    0   ...
+chr5:106932115-106934700:+  0    2    7   ...
+```
+
+* Column 1: `junction_id` formatted exactly as `chr:start-end:strand`.
+* Remaining columns: sample IDs you choose (numeric counts in each cell).
+
+`classify_junctions.R` runs automatically after ingest and fills in the
+`annotated` (0/1) flag for each junction by comparing its coords to the
+gencode model. That rule is skipped entirely when `filter_unannotated`
+is `false` — you can run gene_matrix input through genome_wide mode
+without ever touching gencode-derived annotation.
+
+## Sample metadata (optional)
+
+Quetzal needs **nothing** from a sample metadata file in the default
+config. Provide it only if you want one of the two opt-in features:
+
+| Feature | Mode | Required config | Required metadata columns |
+| --- | --- | --- | --- |
+| Drop normal/control samples upfront | both | `exclude_normals: true` + `normal_filter.column` + `normal_filter.pattern` | `sample_id_column`, `normal_filter.column` |
+| Group samples in the structure plot | gene_level | `structure_plot_grouping_column` | `sample_id_column`, `structure_plot_grouping_column` |
+
+`sample_id_column` (default `rail_id`) must match either the snaptron
+rail_ids inside the packed `samples` column (snaptron input) or the
+column headers of your wide TSV (gene_matrix input).
+
+### Shipped example: `data/example_tcga_metadata.tsv`
+
+A 348 KB slim version of the Snaptron TCGA-v2 manifest with just the
+three columns Quetzal actually consumes for TCGA cohorts:
+
+```
+rail_id  gdc_cases.project.project_id  cgc_sample_sample_type
+106797   TCGA-ACC                      Primary Tumor
+110230   TCGA-ACC                      Primary Tumor
+...
+```
+
+The matching config snippet to reproduce v0.1 behaviour on TCGA:
+
+```yaml
+sample_metadata: data/example_tcga_metadata.tsv
+sample_id_column: rail_id
+exclude_normals: true
+normal_filter:
+  column: cgc_sample_sample_type
+  pattern: Normal
+# gene_level only: group structure plot by TCGA cancer cohort
+structure_plot_grouping_column: gdc_cases.project.project_id
+```
+
+Drop in your own manifest in the same shape for non-TCGA cohorts —
+swap `cgc_sample_sample_type` / `gdc_cases.project.project_id` for
+whatever your dataset calls those concepts.
+
+## Configfile
+
+A single `config/default_config.yaml` is the source of truth for every
+knob. Copy it, edit, point `snakemake --configfile your_config.yaml` at
+it. The shipped defaults:
+
+```yaml
+# input
+input_format: snaptron        # or gene_matrix
+input_dir:    data/all_genes
+output_dir:   output
+gencode:      data/hg38_granges.RDS
+
+# per-gene NMF (both modes)
+max_factors:                       10      # gene_level default; bump for genome_wide (~32)
+variance_explained:                0.99    # PCA cumulative-variance elbow
+min_samples_per_junc:              10
+min_reads_per_sample_per_cluster:  5
+min_clust_read_count_avg:          0
+gene_range_bound:                  2000
+
+# optional sample-level filtering
+sample_metadata:    null
+sample_id_column:   rail_id
+exclude_normals:    false
+normal_filter:
+  column:  null
+  pattern: null
+
+# gene_level structure-plot grouping (optional)
+structure_plot_grouping_column: null
+
+# genome_wide
+filter_unannotated:           true   # keep only factors loading on unannotated junctions
+unann_factor_loading_ratio:   2.0
+sample_fraction:              0.8    # min coverage to include a gene's factors
+greedy_kmax:                  300    # flashier::flash greedy_Kmax
+```
+
+## Running the pipelines
+
+Snakemake builds the conda env from `scripts/<mode>/envs/rscript.yml`
+(a mirror of `environment/quetzal-r.yml`) on first invocation. Add
+`--executor slurm --default-resources slurm_partition=... slurm_account=...`
+for cluster fan-out.
+
+```bash
+# gene_level
+cd scripts/gene_level
+snakemake --configfile ../../config/default_config.yaml --use-conda --jobs <N>
+
+# genome_wide
+cd scripts/genome_wide
+snakemake --configfile ../../config/default_config.yaml --use-conda --jobs <N>
+```
+
+Each per-gene rule writes a `list(skipped = TRUE, reason = "...")`
+stub to its output when filters knock the gene out, so the DAG never
+breaks — failed genes just propagate as empty rows in the final
+flashier matrix.
+
+### v0.1-equivalent config (for reproducing manuscript outputs)
+
+```yaml
+input_format:   snaptron
+input_dir:      data/all_genes
+output_dir:     output
+gencode:        data/hg38_granges.RDS
+
+# v0.1's elbow_cutoff = 0.01 == v1.0's variance_explained = 0.99
+variance_explained:                0.99
+max_factors:                       10
+min_samples_per_junc:              10
+min_reads_per_sample_per_cluster:  5
+gene_range_bound:                  2000
+
+# v0.1 silently dropped TCGA normals
+sample_metadata:  data/example_tcga_metadata.tsv
+sample_id_column: rail_id
+exclude_normals:  true
+normal_filter:
+  column:  cgc_sample_sample_type
+  pattern: Normal
+
+# v0.1 grouped the structure plot by TCGA cancer cohort
+structure_plot_grouping_column: gdc_cases.project.project_id
+```
 
 ## Repository layout
 
 ```
 Quetzal/
+├── README.md
+├── LICENSE
+├── config/
+│   └── default_config.yaml
 ├── environment/
-│   └── quetzal-r.yml             # R 4.4 + Bioc 3.20 conda env
+│   └── quetzal-r.yml                  # R 4.4 + Bioc 3.20 conda env
 ├── scripts/
+│   ├── common/                        # shared adapters + NMF + per-gene unann extract
+│   │   ├── _canonical.R               # post-parse pipeline (shared by both ingests)
+│   │   ├── ingest_snaptron.R
+│   │   ├── ingest_gene_matrix.R
+│   │   ├── classify_junctions.R
+│   │   ├── fit_pnmf.R
+│   │   └── extract_unann_factors.R
 │   ├── gene_level/
-│   │   ├── Snakefile             # per-gene Poisson NMF Snakemake workflow
-│   │   ├── gene_plots_and_objs.R # fits Poisson NMF + DE per gene
-│   │   └── envs/rscript.yml      # symlink-equivalent to ../../environment/quetzal-r.yml
+│   │   ├── Snakefile
+│   │   ├── de_analysis.R
+│   │   ├── make_plots.R
+│   │   └── envs/rscript.yml           # mirror of environment/quetzal-r.yml
 │   └── genome_wide/
-│       ├── lf_Snakefile               # leafcutter -> per-gene fastTopics (run once per chr)
-│       ├── setting_up_snakemake.sh    # example SLURM dispatcher (edit placeholders before use)
-│       ├── tcga_LF_saving.R
-│       ├── fasttopics_to_flashier.R   # full FastTopics -> softImpute -> flashier
-│       └── envs/fasttopics.yml
+│       ├── Snakefile
+│       ├── softimpute_flash.R
+│       └── envs/rscript.yml
 ├── data/
-│   ├── hg38_granges.RDS                  (~24 MB)
-│   └── all_genes/                        (NOT in repo -- per-chr snaptron junction tables)
-└── output/                               (all pipeline outputs land here)
-    ├── genome_wide/<chr>/FastTopics_output/<gene>/res.RDS
-    └── gene_level/<chr>/<gene>/{res,de_res}.RDS, *.tsv, *.html
+│   ├── hg38_granges.RDS               # default gencode (24 MB)
+│   ├── example_tcga_metadata.tsv      # 348 KB slim TCGA manifest
+│   └── all_genes/                     # per-chr inputs (NOT shipped; user-provided)
+└── output/                            # snakemake target dir
+    ├── gene_level/<chr>/<gene>/{matrix,res,de_res}.RDS, *.html
+    └── genome_wide/<chr>/<gene>/{matrix,res}.RDS, unann_factors.tsv,
+        softimpute_flash.RDS
 ```
-
-> **Note (v1.0 in progress).** Main is currently moving past v0.1 toward a
-> generalised v1.0 release: configfile-driven, supports user-supplied per-gene
-> matrices in addition to snaptron, drops the TCGA-specific QC step entirely.
-> v0.1 stays immutable at the `v0.1.0` tag — `git checkout v0.1.0` for the
-> manuscript snapshot.
-
-### Data not shipped with the repo
-
-The Snaptron TCGA-v2 sample metadata file is **not** included in this
-repository (~65 MB, distributed by Snaptron upstream). Download it
-once into `data/` before running any of the pipelines:
-
-```bash
-curl -L -o data/tcga_v2_samples.tsv \
-     https://snaptron.cs.jhu.edu/data/tcgav2/samples.tsv
-```
-
-## Install
-
-```bash
-git clone <repo-url>
-cd Quetzal
-
-# create the R environment (R 4.4 + Bioc 3.20 + fastTopics + flashier)
-conda env create -f environment/quetzal-r.yml
-conda activate quetzal-r
-```
-
-`environment/quetzal-r.yml` pins r-base to 4.4 and lets conda solve a
-self-consistent Bioconductor 3.20 + CRAN snapshot. The two per-Snakefile
-yml files under `scripts/*/envs/` are mirrors of the central yml --
-`snakemake --use-conda` builds the env automatically, so you don't need
-to run `conda env create` by hand unless you want the env outside of
-Snakemake (e.g. for running `fasttopics_to_flashier.R` interactively).
-
-## Methods
-
-Quetzal ships two **independent** methods. They both consume the same
-input (per-chromosome snaptron junction tables) and they both fit
-Poisson NMFs per gene, but they answer different questions and neither
-depends on the other's output. Run one, the other, or both, depending
-on what you need.
-
-| Method | Question it answers | Driver | Output location |
-| --- | --- | --- | --- |
-| **Genome-wide** | "What are the cohort-driving splicing factor programs across all of TCGA?" -- yields one sample x factor matrix (the GSPs) covering every gene at once | `scripts/genome_wide/lf_Snakefile` + `scripts/genome_wide/fasttopics_to_flashier.R` | `output/genome_wide/` |
-| **Gene-level** | "For one specific gene, what are its factorised splicing programs?" -- yields per-gene plots and DE results for visual inspection | `scripts/gene_level/Snakefile` (`gene_plots_and_objs.R`) | `output/gene_level/` |
-
-The two pipelines fit independent Poisson NMFs. The genome-wide one
-caps at 32 factors per gene and feeds those into a downstream
-softImpute + flashier collapse to a single 300-factor matrix. The
-gene-level one caps at 10 factors per gene for cleaner per-gene
-visualisation and runs its own DE tests on top.
-
-### Genome-wide method
-
-**Step A (Snakemake).** `scripts/genome_wide/lf_Snakefile` consumes one
-chromosome's snaptron junction tables and writes a per-gene fastTopics
-factorisation. The Snakefile takes the current working directory's
-basename as the chromosome label, so the standard invocation is one
-Snakemake job per chromosome from a `chr<N>/` subdir of
-`scripts/genome_wide/`:
-
-```bash
-cd scripts/genome_wide
-mkdir chr5 && cp lf_Snakefile chr5/
-cd chr5
-snakemake -s lf_Snakefile --use-conda --jobs <N>   # add your scheduler flags
-```
-
-Outputs land at
-`output/genome_wide/<chr>/FastTopics_output/<gene>/res.RDS`.
-
-v0.1 ships no required dispatch wrapper -- parallelise across
-chromosomes however your cluster prefers (SLURM array, snakemake
-profile, a `for` loop, ...). `setting_up_snakemake.sh` next to
-`lf_Snakefile` is one concrete example we used for the manuscript;
-edit the two SLURM placeholders at the top of the script (or rewrite
-the snakemake invocation for your scheduler) before running.
-v1.0 will provide a built-in dispatcher.
-
-**Step B (R script).** Once Step A has populated
-`output/genome_wide/<chr>/FastTopics_output/`, collapse every per-gene
-result into one sample x feature matrix (keeping only factors that
-load mostly on unannotated junctions), QC-filter samples on
-RIN / %C / junction count / avgQ / unique-mapped % / unproductive-
-productive ratio, fill missing values with `softImpute`, and fit a
-300-factor `flashier::flash`:
-
-```bash
-conda activate quetzal-r        # only the R env, no snakemake needed
-Rscript scripts/genome_wide/fasttopics_to_flashier.R \
-    --gene_dir       output/genome_wide \
-    --snaptron_root  data/all_genes \
-    --tcga_meta      data/tcga_v2_samples.tsv \
-    --analyte        data/analyte.tsv \
-    --pu_dir         data/productive_unproductive \
-    --features_out   output/genome_wide/softimpute_features.tsv \
-    --flash_out      output/genome_wide/softimpute_flash_300_qc_filtered.RDS
-```
-
-`softimpute_flash_300_qc_filtered.RDS` is the genome-wide factorisation
-used by every downstream Quetzal analysis.
-
-External requirement: `data/all_genes/<chr>/snaptron_output/<gene>_snaptron.tsv`
-for every gene you want factorised. v0.1 expects this path to exist;
-v1.0 will ship a generator/loader for it.
-
-### Gene-level method
-
-`scripts/gene_level/Snakefile` fits its own per-gene Poisson NMF
-(low-k cap, for visualisation) and runs differential expression on the
-factors:
-
-```bash
-cd scripts/gene_level
-snakemake --use-conda --jobs <N>   # add your scheduler flags
-```
-
-Outputs land at `output/gene_level/<chr>/<gene>/`:
-`res.RDS`, `de_res.RDS`, `whole_factor.html`.
-
-This method is independent of the genome-wide method -- it does **not**
-consume `output/genome_wide/`. Run it whenever you want a per-gene view
-without first running the full genome-wide pipeline.
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
