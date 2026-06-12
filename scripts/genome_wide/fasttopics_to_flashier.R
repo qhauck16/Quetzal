@@ -37,6 +37,13 @@
 # All paths default to the layout shipped in the Quetzal v0.1 data/
 # directory; override any of them with the matching CLI flag.
 
+# fastTopics isn't packaged for conda-forge; install once into the
+# active conda env on first invocation (cached thereafter).
+if (!requireNamespace("fastTopics", quietly = TRUE)) {
+  remotes::install_github("stephenslab/fastTopics",
+                           upgrade = "never", dependencies = TRUE)
+}
+
 suppressPackageStartupMessages({
   library(optparse)
   library(data.table)
