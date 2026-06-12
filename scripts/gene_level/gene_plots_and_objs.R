@@ -39,9 +39,14 @@ lfc_thresh <- as.numeric(args[14])
 abs_thresh <- as.numeric(args[15])
 sval_thresh <- as.numeric(args[16])
 
+# Optional output_base prefix (args[17]); when given, every <chr>/<gene>/
+# path below is rooted under it. Back-compat default = cwd.
+output_base <- if (length(args) >= 17 && nzchar(args[17])) args[17] else "."
+chr <- file.path(output_base, chr)
+
 
 if(!dir.exists(paste0( chr, '/', gene_name))){
-  dir.create(paste0( chr, '/', gene_name))
+  dir.create(paste0( chr, '/', gene_name), recursive = TRUE)
 }
 
 file.create(paste0( chr, '/', gene_name, '/de_res.RDS'))

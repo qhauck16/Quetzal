@@ -1,18 +1,20 @@
 import os
 # Working dir is <repo>/scripts/genome_wide/<chr>/. The snaptron tables,
 # TCGA metadata, hg38 GRanges, and tcga_LF_saving.R all live under the
-# repo root; resolve their paths relative to that.
+# repo root; resolve their paths relative to that. Outputs are written
+# to <repo>/output/genome_wide/<chr>/FastTopics_output/.
 DIR      = os.path.basename(os.getcwd())
 REPO     = "../../.."                                # -> <repo>
 DATA     = REPO + "/data"
 SCRIPTS  = REPO + "/scripts/genome_wide"
 SNAPTRON = DATA + "/all_genes/" + DIR + "/snaptron_output"
+OUTPUT   = REPO + "/output/genome_wide/" + DIR + "/FastTopics_output"
 
 GENES, = glob_wildcards(SNAPTRON + "/{gene}_snaptron.tsv")
 
 rule all:
     input:
-        expand("FastTopics_output/{gene}/res.RDS", gene=GENES)
+        expand(OUTPUT + "/{gene}/res.RDS", gene=GENES)
 
 rule snaptron_to_LF:
     input:
@@ -21,21 +23,22 @@ rule snaptron_to_LF:
         gencode_object = DATA + "/hg38_granges.RDS",
         lf_script      = SCRIPTS + "/tcga_LF_saving.R"
     output:
-        "FastTopics_output/{gene}/res.RDS"
+        OUTPUT + "/{gene}/res.RDS"
     conda:
         "../envs/fasttopics.yml"
     threads: 24
     resources:
         mem_mb=10000
     params:
-        min_samples_per_junc=100,
-        elbow_cutoff = 0.0001,
-        avg_clust_read_count_min = 0,
-        avg_sample_reads_per_cluster=5,
-        max_factors=32,
-        gene_range_bound=2000
+        out_dir                       = OUTPUT + "/",
+        min_samples_per_junc          = 100,
+        elbow_cutoff                  = 0.0001,
+        avg_clust_read_count_min      = 0,
+        avg_sample_reads_per_cluster  = 5,
+        max_factors                   = 32,
+        gene_range_bound              = 2000
     shell:
         """
-        Rscript {input.lf_script} {input.tcga_snaptron} {input.tcga_metadata} {threads} {params.min_samples_per_junc} FastTopics_output/ {wildcards.gene} {params.elbow_cutoff} \
+        Rscript {input.lf_script} {input.tcga_snaptron} {input.tcga_metadata} {threads} {params.min_samples_per_junc} {params.out_dir} {wildcards.gene} {params.elbow_cutoff} \
         {params.max_factors} {params.avg_clust_read_count_min} {input.gencode_object} {params.avg_sample_reads_per_cluster} {params.gene_range_bound}
         """

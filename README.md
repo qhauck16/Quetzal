@@ -28,10 +28,14 @@ Quetzal/
 │       ├── tcga_LF_saving.R
 │       ├── fasttopics_to_flashier.R   # full FastTopics -> softImpute -> flashier
 │       └── envs/fasttopics.yml
-└── data/
-    ├── hg38_granges.RDS                  (~24 MB)
-    ├── analyte.tsv                       (~18 MB)
-    └── productive_unproductive/          (~8 MB; chr<N>_*.tsv)
+├── data/
+│   ├── hg38_granges.RDS                  (~24 MB)
+│   ├── analyte.tsv                       (~18 MB)
+│   ├── all_genes/                        (NOT in repo -- per-chr snaptron junction tables)
+│   └── productive_unproductive/          (~8 MB; chr<N>_*.tsv)
+└── output/                               (all pipeline outputs land here)
+    ├── genome_wide/<chr>/FastTopics_output/<gene>/res.RDS
+    └── gene_level/<chr>/<gene>/{res,de_res}.RDS, *.tsv, *.html
 ```
 
 ### Data not shipped with the repo
