@@ -64,7 +64,7 @@ either of the snakefile envs -- they alias the central yml.
 
 The full pipeline has two stages with independent Snakemake workflows.
 
-### 1. Per-chromosome leafcutter -> fastTopics (genome-wide)
+### 1. Per-chromosome junction files (v0.1 assumes Snaptron-format) -> fastTopics (genome-wide)
 
 `scripts/genome_wide/lf_Snakefile` consumes one chromosome's snaptron
 junction tables (produced upstream from recount3 / Snaptron) and writes
