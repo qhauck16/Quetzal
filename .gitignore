@@ -1,0 +1,27 @@
+# Snakemake / Snakemake-SLURM runtime
+.snakemake/
+.snakemake.log
+
+# Conda env caches
+.conda/
+
+# R / RStudio
+.Rproj.user/
+.Rhistory
+.RData
+*.Rcheck/
+.Renviron
+
+# Output artefacts users build locally -- never check in
+softimpute_features.tsv
+softimpute_flash_*.RDS
+*.log
+*.out
+*.err
+
+# External data the user fetches with curl (NOT redistributed in-repo)
+data/tcga_v2_samples.tsv
+
+# OS junk
+.DS_Store
+Thumbs.db
