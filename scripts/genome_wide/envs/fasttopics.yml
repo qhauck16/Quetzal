@@ -33,9 +33,9 @@ dependencies:
   - r-aod
   - r-softimpute
   - r-optparse
-  - r-flashier
-  # NOTE: r-fasttopics isn't on conda-forge; r-remotes lets the R scripts
-  # auto-install it from stephenslab/fastTopics on first invocation.
+  # NOTE: r-fasttopics and r-flashier aren't reliably packaged for
+  # conda-forge; r-remotes lets the R scripts auto-install them from
+  # GitHub on first invocation.
   - r-remotes
   # Bioconductor packages (Bioc 3.20 ships with R 4.4)
   - bioconductor-genomicranges
