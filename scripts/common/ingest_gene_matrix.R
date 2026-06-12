@@ -1,17 +1,16 @@
 #!/usr/bin/env Rscript
-# Quetzal v1.0 -- snaptron TSV -> canonical per-gene matrix.RDS.
+# Quetzal v1.0 -- user-supplied wide-TSV per-gene junction count matrix
+# -> canonical per-gene matrix.RDS.
 #
-# Snaptron-format-specific parsing only; the post-parse pipeline (range/strand
-# filter, normal-drop, leafcutter clustering, cluster/sample read floors,
-# size checks) lives in scripts/common/_canonical.R so this script and
-# ingest_gene_matrix.R stay in lockstep.
+# Expected input format (one TSV per gene):
+#   first column          : junction_id, "chr:start-end:strand"
+#                            (header may be empty or "junction_id")
+#   remaining columns     : sample IDs (header row)
+#   cells                 : integer read counts
 #
-# Standalone invocation:
-#   Rscript scripts/common/ingest_snaptron.R \
-#       --input data/all_genes/chr5/snaptron_output/BRD9_snaptron.tsv \
-#       --gene_name BRD9 --chr chr5 \
-#       --gencode data/hg38_granges.RDS \
-#       --output output/gene_level/chr5/BRD9/matrix.RDS
+# The `annotated` field of junction_info is left NA at this stage --
+# classify_junctions.R fills it from the gencode model in a follow-up
+# Snakemake rule.
 
 suppressPackageStartupMessages({
   library(optparse)
@@ -26,7 +25,7 @@ suppressPackageStartupMessages({
 
 option_list <- list(
   make_option("--input",     type = "character",
-              help = "snaptron TSV for one gene"),
+              help = "wide TSV for one gene (junctions x samples)"),
   make_option("--gene_name", type = "character",
               help = "gene name (matches gencode gene_name)"),
   make_option("--chr",       type = "character",
@@ -41,7 +40,7 @@ option_list <- list(
   make_option("--min_samples_per_junc", type = "integer", default = 10L,
               help = "junctions must be supported in >= N samples [%default]"),
   make_option("--gene_range_bound",     type = "integer", default = 2000L,
-              help = "junctions kept must fall within +/- N bp of the gene's gencode range [%default]"),
+              help = "junctions within +/- N bp of the gene's gencode range [%default]"),
   make_option("--min_clust_read_count_avg", type = "double", default = 0,
               help = "clusters dropped if mean reads-per-sample < N [%default]"),
   make_option("--min_reads_per_sample_per_cluster", type = "double", default = 5,
@@ -49,18 +48,17 @@ option_list <- list(
 
   # optional normal-sample exclusion (off by default in v1.0)
   make_option("--sample_metadata",       type = "character", default = NA_character_,
-              help = "path to sample metadata TSV (needed for --exclude_normals)"),
+              help = "path to sample metadata TSV"),
   make_option("--exclude_normals",       type = "logical",   default = FALSE,
               action = "store_true",
               help = "drop samples whose --normal_filter_column matches --normal_filter_pattern"),
   make_option("--normal_filter_column",  type = "character", default = NA_character_,
-              help = "metadata column to test (e.g. 'cgc_sample_sample_type' for TCGA)"),
+              help = "metadata column to test"),
   make_option("--normal_filter_pattern", type = "character", default = NA_character_,
-              help = "regex pattern matching normal samples (e.g. 'Normal' for TCGA)"),
-  make_option("--sample_id_column",      type = "character", default = "rail_id",
-              help = "metadata column carrying sample IDs used as snaptron count keys [%default]"),
+              help = "regex pattern matching normal samples"),
+  make_option("--sample_id_column",      type = "character", default = "sample_id",
+              help = "metadata column carrying sample IDs (matches TSV column headers) [%default]"),
 
-  # internal early-exit threshold (also enforced again in fit_pnmf.R)
   make_option("--min_junctions_for_pca", type = "integer", default = 3L,
               help = "hard floor on surviving junctions [%default]")
 )
@@ -69,7 +67,7 @@ stopifnot(!is.null(opt$input), !is.null(opt$gene_name),
            !is.null(opt$chr),   !is.null(opt$output))
 dir.create(dirname(opt$output), showWarnings = FALSE, recursive = TRUE)
 
-# ---- load shared helpers -------------------------------------------------
+# ---- shared helpers -------------------------------------------------------
 
 .find_script_dir <- function() {
   args <- commandArgs(trailingOnly = FALSE)
@@ -84,84 +82,67 @@ write_result <- function(result, output) {
   message(sprintf("  wrote %s", output))
 }
 
-# ---- short-circuit: empty / tiny input -----------------------------------
+# ---- short-circuit -------------------------------------------------------
 
-if (!file.exists(opt$input) || file.size(opt$input) < 100L) {
+if (!file.exists(opt$input) || file.size(opt$input) < 50L) {
   write_result(.skipped(opt$gene_name,
-                          sprintf("input file missing or < 100 bytes (%s)", opt$input)),
+                          sprintf("input file missing or < 50 bytes (%s)", opt$input)),
                 opt$output)
   quit(save = "no", status = 0)
 }
 
-# ---- snaptron TSV -> raw counts + junction_info --------------------------
+# ---- parse wide TSV -> raw counts + junction_info ------------------------
 
-gene_table <- read_tsv(opt$input, show_col_types = FALSE)
-required   <- c("chromosome", "start", "end", "strand", "samples",
-                 "samples_count", "annotated")
-missing    <- setdiff(required, colnames(gene_table))
-if (length(missing) > 0L) {
+tbl <- read_tsv(opt$input, show_col_types = FALSE)
+if (ncol(tbl) < 2L) {
   write_result(.skipped(opt$gene_name,
-                          sprintf("snaptron table missing required columns: %s",
-                                  paste(missing, collapse = ", "))),
+                          "input TSV has < 2 columns (need junction_id + at least one sample)"),
                 opt$output)
   quit(save = "no", status = 0)
 }
 
-# Snaptron-specific cheap filter on the `samples_count` column. The
-# stage-1 rowSums filter in _canonical.R catches the rest (and handles
-# generic input that has no `samples_count`).
-gene_table <- gene_table %>%
-  filter(samples_count > opt$min_samples_per_junc) %>%
-  distinct()
+junction_id <- as.character(tbl[[1]])
+sample_ids  <- colnames(tbl)[-1L]
 
-# Sample IDs: from metadata when supplied, else the union seen in the
-# `samples` packed strings.
+counts <- as.matrix(tbl[, -1L, drop = FALSE])
+mode(counts) <- "integer"
+rownames(counts) <- junction_id
+colnames(counts) <- sample_ids
+
+# Parse junction_id "chr:start-end:strand" into components.
+m <- regmatches(junction_id,
+                 regexec("^([^:]+):([0-9]+)-([0-9]+):([+\\-\\*])$", junction_id))
+bad <- vapply(m, function(x) length(x) == 0L, logical(1L))
+if (any(bad)) {
+  write_result(.skipped(opt$gene_name,
+                          sprintf("%d junction IDs don't match 'chr:start-end:strand' (e.g. '%s')",
+                                  sum(bad), junction_id[which(bad)[1]])),
+                opt$output)
+  quit(save = "no", status = 0)
+}
+parts <- do.call(rbind, m)
+junction_info <- tibble(
+  junction_id = junction_id,
+  chrom       = parts[, 2],
+  start       = as.integer(parts[, 3]),
+  end         = as.integer(parts[, 4]),
+  strand      = parts[, 5],
+  annotated   = NA_integer_       # filled in by classify_junctions.R
+)
+
+# Optional sample metadata load (only used by canonicalise() for the
+# normal filter; gene_matrix input doesn't need it otherwise).
 sample_meta <- NULL
 if (!is.na(opt$sample_metadata) && nzchar(opt$sample_metadata)) {
   sample_meta <- read_tsv(opt$sample_metadata, show_col_types = FALSE)
   if (!opt$sample_id_column %in% colnames(sample_meta)) {
     write_result(.skipped(opt$gene_name,
-                            sprintf("sample metadata missing --sample_id_column '%s'",
+                            sprintf("metadata missing --sample_id_column '%s'",
                                     opt$sample_id_column)),
                   opt$output)
     quit(save = "no", status = 0)
   }
-  sample_ids <- as.character(sample_meta[[opt$sample_id_column]])
-} else {
-  sample_ids <- unique(unlist(lapply(gene_table$samples, function(s) {
-    parts <- str_split(s, ",")[[1]]
-    parts <- parts[nzchar(parts)]
-    vapply(str_split(parts, ":"), `[`, character(1L), 1L)
-  })))
 }
-
-counts <- matrix(0L,
-                  nrow = nrow(gene_table),
-                  ncol = length(sample_ids),
-                  dimnames = list(NULL, sample_ids))
-
-for (i in seq_len(nrow(gene_table))) {
-  pre_split <- str_split(gene_table$samples[i], ",")[[1]]
-  pre_split <- pre_split[nzchar(pre_split)]
-  if (!length(pre_split)) next
-  pairs     <- str_split_fixed(pre_split, ":", 2L)
-  rail_ids  <- pairs[, 1]
-  cs        <- as.integer(pairs[, 2])
-  hit       <- rail_ids %in% colnames(counts)
-  if (any(hit)) counts[i, rail_ids[hit]] <- cs[hit]
-}
-
-junction_info <- tibble(
-  junction_id = paste0(gene_table$chromosome, ":",
-                        gene_table$start, "-", gene_table$end, ":",
-                        gene_table$strand),
-  chrom       = gene_table$chromosome,
-  start       = as.integer(gene_table$start),
-  end         = as.integer(gene_table$end),
-  strand      = gene_table$strand,
-  annotated   = as.integer(gene_table$annotated)
-)
-rownames(counts) <- junction_info$junction_id
 
 # ---- delegate to shared post-parse pipeline ------------------------------
 
@@ -188,7 +169,7 @@ result  <- canonicalise(
 if (isTRUE(result$skipped)) {
   write_result(result, opt$output)
 } else {
-  message(sprintf("  [ok %s] %d junctions x %d samples",
+  message(sprintf("  [ok %s] %d junctions x %d samples (annotated NA, pending classify_junctions.R)",
                    opt$gene_name, nrow(result$counts), ncol(result$counts)))
   write_result(result, opt$output)
 }
