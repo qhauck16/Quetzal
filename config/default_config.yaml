@@ -1,22 +1,31 @@
 # Quetzal v1.0 default config. Copy this file and override knobs in your own
 # config; pass it via `snakemake --configfile path/to/your_config.yaml`.
+#
+# IMPORTANT: every path below is resolved relative to the directory you run
+# `snakemake` from -- NOT relative to this config file and NOT relative to
+# the Quetzal source tree. Set absolute paths (recommended) or run from a
+# CWD where the relative paths resolve.
 
 # ---------- input ----------
 # `snaptron`     -> <input_dir>/<chr>/snaptron_output/<gene>_snaptron.tsv
 # `gene_matrix`  -> <input_dir>/<chr>/<gene>.tsv  (wide TSV; rows = junction_id,
 #                   cols = sample_id, first column header empty or "junction_id")
 input_format: snaptron
-input_dir: data/all_genes
+input_dir: /absolute/path/to/your/all_genes        # YOU SET THIS
 
 # ---------- output ----------
-# under <output_dir> the snakefiles will create gene_level/ and/or genome_wide/
-output_dir: output
+# under <output_dir> the snakefiles will create gene_level/ and/or genome_wide/.
+# Put it wherever you want results; nothing forces it to live inside the
+# Quetzal source tree.
+output_dir: /absolute/path/to/your/output          # YOU SET THIS
 
 # ---------- gencode ----------
-# Default = the GENCODE v46 (hg38) GRanges RDS shipped under data/.
-# .gtf / .gtf.gz are also supported by classify_junctions.R via
-# rtracklayer::import (v1.1 add-on; .RDS for now).
-gencode: data/gencode_v46_granges.RDS
+# Quetzal ships a copy of the GENCODE v46 (hg38) GRanges RDS at
+# data/gencode_v46_granges.RDS inside the source tree, but the config does
+# not auto-discover it. Either point at the shipped file with its absolute
+# path, or supply your own .RDS .gtf / .gtf.gz (the latter via
+# rtracklayer::import; .RDS only for now).
+gencode: /absolute/path/to/gencode_v46_granges.RDS  # YOU SET THIS
 
 # ---------- per-gene NMF knobs ----------
 # Upper bound on k for the per-gene Poisson NMF. gene_level mode tends to be
