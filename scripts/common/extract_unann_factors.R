@@ -52,8 +52,10 @@ option_list <- list(
               help = "res.RDS (fastTopics fit from fit_pnmf.R)"),
   make_option("--output", type = "character",
               help = "unann_factors.tsv output path"),
+  make_option("--filter_unannotated", type = "logical", default = TRUE,
+              help = "TRUE (default, v0.1 behaviour): keep only factors loading mostly on unannotated junctions. FALSE: keep every factor regardless of annotation; the annotated NA check is skipped, so gene_matrix input can flow through without classify_junctions.R. [%default]"),
   make_option("--unann_factor_loading_ratio", type = "double", default = 2.0,
-              help = "keep factor k iff max(F[unann, k]) * ratio > max(F[, k]) [%default]")
+              help = "(used only when --filter_unannotated TRUE) keep factor k iff max(F[unann, k]) * ratio > max(F[, k]) [%default]")
 )
 opt <- parse_args(OptionParser(option_list = option_list))
 stopifnot(!is.null(opt$matrix), !is.null(opt$res), !is.null(opt$output))
@@ -83,40 +85,44 @@ if (isTRUE(res$skipped)) {
   quit(save = "no", status = 0)
 }
 
-# --- locate unannotated junctions + filter F ------------------------------
+# --- factor selection -----------------------------------------------------
 
-annotated_status <- mat$junction_info$annotated
-if (anyNA(annotated_status)) {
-  # classify_junctions wasn't run; refuse rather than guess.
-  write_empty(rownames(res$L) %||% character(0),
-              "junction_info$annotated has NA values; run classify_junctions.R first")
-  quit(save = "no", status = 0)
-}
+if (isTRUE(opt$filter_unannotated)) {
+  # v0.1 behaviour: keep only factors loading mostly on unannotated junctions.
+  annotated_status <- mat$junction_info$annotated
+  if (anyNA(annotated_status)) {
+    # classify_junctions wasn't run; refuse rather than guess.
+    write_empty(rownames(res$L) %||% character(0),
+                "junction_info$annotated has NA values; run classify_junctions.R first (or set --filter_unannotated FALSE)")
+    quit(save = "no", status = 0)
+  }
 
-unann_ids <- mat$junction_info$junction_id[annotated_status == 0L]
-if (length(unann_ids) == 0L) {
-  write_empty(rownames(res$L), "no unannotated junctions in this gene")
-  quit(save = "no", status = 0)
-}
+  unann_ids <- mat$junction_info$junction_id[annotated_status == 0L]
+  if (length(unann_ids) == 0L) {
+    write_empty(rownames(res$L), "no unannotated junctions in this gene")
+    quit(save = "no", status = 0)
+  }
 
-# fit_pnmf set rownames(res$F) = junction_id, so this is a clean lookup.
-mask     <- rownames(res$F) %in% unann_ids
-if (!any(mask)) {
-  write_empty(rownames(res$L),
-              "no junction_id overlap between matrix and res (unexpected)")
-  quit(save = "no", status = 0)
-}
-unann_F  <- res$F[mask, , drop = FALSE]
+  mask <- rownames(res$F) %in% unann_ids
+  if (!any(mask)) {
+    write_empty(rownames(res$L),
+                "no junction_id overlap between matrix and res (unexpected)")
+    quit(save = "no", status = 0)
+  }
+  unann_F <- res$F[mask, , drop = FALSE]
 
-# --- factor selection (v0.1 rule) -----------------------------------------
+  max_unann   <- apply(unann_F, 2, max)
+  max_overall <- apply(res$F,   2, max)
+  keep        <- (max_unann * opt$unann_factor_loading_ratio) > max_overall
 
-max_unann   <- apply(unann_F,  2, max)
-max_overall <- apply(res$F,    2, max)
-keep        <- (max_unann * opt$unann_factor_loading_ratio) > max_overall
-
-if (!any(keep)) {
-  write_empty(rownames(res$L), "no factor passed unann_factor_loading_ratio")
-  quit(save = "no", status = 0)
+  if (!any(keep)) {
+    write_empty(rownames(res$L), "no factor passed unann_factor_loading_ratio")
+    quit(save = "no", status = 0)
+  }
+} else {
+  # filter_unannotated = FALSE: keep every factor. Annotated NA check
+  # skipped (gene_matrix input can flow through without classify_junctions).
+  keep <- rep(TRUE, ncol(res$F))
 }
 
 # --- multinomial L -> kept-factor loadings --------------------------------
@@ -131,7 +137,7 @@ out <- L %>%
   as_tibble()
 
 write_tsv(out, opt$output)
-message(sprintf("  [ok %s] kept %d / %d factors (%s); wrote %s",
+message(sprintf("  [ok %s] kept %d / %d factors (%s) [filter_unannotated=%s]; wrote %s",
                  gene, sum(keep), length(keep),
                  paste(which(keep), collapse = ","),
-                 opt$output))
+                 opt$filter_unannotated, opt$output))

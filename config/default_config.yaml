@@ -60,7 +60,14 @@ normal_filter:
 structure_plot_grouping_column: null
 
 # ---------- genome_wide specific ----------
-# A factor is "unannotated-loaded" when:
+# When true (default, v0.1 behaviour) only factors loading mostly on
+# UNANNOTATED junctions are kept and fed into the softimpute + flashier
+# collapse. When false every per-gene factor is kept regardless of
+# annotation status -- useful when running gene_matrix input through
+# genome_wide mode without first running classify_junctions.R.
+filter_unannotated: true
+
+# A factor counts as "unannotated-loaded" when (--filter_unannotated true):
 #   max(unann_loading) * unann_factor_loading_ratio > max(overall_loading)
 unann_factor_loading_ratio: 2.0
 
