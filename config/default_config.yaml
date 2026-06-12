@@ -13,9 +13,10 @@ input_dir: data/all_genes
 output_dir: output
 
 # ---------- gencode ----------
-# Default = the hg38 GRanges RDS shipped under data/. .gtf / .gtf.gz are also
-# supported by classify_junctions.R (loaded via rtracklayer::import).
-gencode: data/hg38_granges.RDS
+# Default = the GENCODE v46 (hg38) GRanges RDS shipped under data/.
+# .gtf / .gtf.gz are also supported by classify_junctions.R via
+# rtracklayer::import (v1.1 add-on; .RDS for now).
+gencode: data/gencode_v46_granges.RDS
 
 # ---------- per-gene NMF knobs ----------
 # Upper bound on k for the per-gene Poisson NMF. gene_level mode tends to be

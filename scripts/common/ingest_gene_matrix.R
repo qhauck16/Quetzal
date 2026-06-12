@@ -31,7 +31,7 @@ option_list <- list(
   make_option("--chr",       type = "character",
               help = "chromosome (used for output path + sanity)"),
   make_option("--gencode",   type = "character",
-              default = "data/hg38_granges.RDS",
+              default = "data/gencode_v46_granges.RDS",
               help = "gencode source (.RDS) [%default]"),
   make_option("--output",    type = "character",
               help = "matrix.RDS output path"),

@@ -27,7 +27,7 @@
 # CLI:
 #   Rscript scripts/helpers/leafcutter_to_gene_matrices.R \
 #       --input  /path/to/leafcutter_counts.csv \
-#       --gencode data/hg38_granges.RDS \
+#       --gencode data/gencode_v46_granges.RDS \
 #       --output_dir data/all_genes \
 #       --gene_range_bound 2000
 
@@ -43,7 +43,7 @@ option_list <- list(
   make_option("--input",            type = "character",
               help = "leafcutter-style junction count matrix (CSV or TSV)"),
   make_option("--gencode",          type = "character",
-              default = "data/hg38_granges.RDS",
+              default = "data/gencode_v46_granges.RDS",
               help = "gencode source (.RDS) [%default]"),
   make_option("--output_dir",       type = "character",
               default = "data/all_genes",

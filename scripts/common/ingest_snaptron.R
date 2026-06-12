@@ -10,7 +10,7 @@
 #   Rscript scripts/common/ingest_snaptron.R \
 #       --input data/all_genes/chr5/snaptron_output/BRD9_snaptron.tsv \
 #       --gene_name BRD9 --chr chr5 \
-#       --gencode data/hg38_granges.RDS \
+#       --gencode data/gencode_v46_granges.RDS \
 #       --output output/gene_level/chr5/BRD9/matrix.RDS
 
 suppressPackageStartupMessages({
@@ -32,7 +32,7 @@ option_list <- list(
   make_option("--chr",       type = "character",
               help = "chromosome (used for output path + sanity)"),
   make_option("--gencode",   type = "character",
-              default = "data/hg38_granges.RDS",
+              default = "data/gencode_v46_granges.RDS",
               help = "gencode source (.RDS) [%default]"),
   make_option("--output",    type = "character",
               help = "matrix.RDS output path"),

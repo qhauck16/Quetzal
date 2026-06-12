@@ -142,7 +142,7 @@ it. The shipped defaults:
 input_format: snaptron        # or gene_matrix
 input_dir:    data/all_genes
 output_dir:   output
-gencode:      data/hg38_granges.RDS
+gencode:      data/gencode_v46_granges.RDS
 
 # per-gene NMF (both modes)
 max_factors:                       10      # gene_level default; bump for genome_wide (~32)
@@ -198,7 +198,7 @@ flashier matrix.
 input_format:   snaptron
 input_dir:      data/all_genes
 output_dir:     output
-gencode:        data/hg38_granges.RDS
+gencode:        data/gencode_v46_granges.RDS
 
 # v0.1's elbow_cutoff = 0.01 == v1.0's variance_explained = 0.99
 variance_explained:                0.99
@@ -247,7 +247,7 @@ Quetzal/
 │       ├── softimpute_flash.R
 │       └── envs/rscript.yml
 ├── data/
-│   ├── hg38_granges.RDS               # default gencode (24 MB)
+│   ├── gencode_v46_granges.RDS               # default gencode (24 MB)
 │   ├── example_tcga_metadata.tsv      # 348 KB slim TCGA manifest
 │   └── all_genes/                     # per-chr inputs (NOT shipped; user-provided)
 └── output/                            # snakemake target dir

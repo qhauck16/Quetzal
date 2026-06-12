@@ -54,7 +54,7 @@ option_list <- list(
   make_option("--de_res",       type = "character"),
   make_option("--matrix",       type = "character"),
   make_option("--gencode",      type = "character",
-              default = "data/hg38_granges.RDS"),
+              default = "data/gencode_v46_granges.RDS"),
   make_option("--gene_name",    type = "character"),
   make_option("--whole_output", type = "character"),
   make_option("--de_output",    type = "character"),
