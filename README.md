@@ -15,7 +15,7 @@ the sample-metadata assumptions.
 ```
 Quetzal/
 ├── environment/
-│   └── quetzal-r.yml             # pinned R env (R 4.2.3)
+│   └── quetzal-r.yml             # R 4.4 + Bioc 3.20 conda env
 ├── scripts/
 │   ├── gene_level/
 │   │   ├── Snakefile             # per-gene Poisson NMF Snakemake workflow
@@ -54,14 +54,17 @@ curl -L -o data/tcga_v2_samples.tsv \
 git clone <repo-url>
 cd Quetzal
 
-# create the R environment (R 4.2.3 + flashier 1.0.58 + fastTopics 0.6-192 + ...)
+# create the R environment (R 4.4 + Bioc 3.20 + fastTopics + flashier)
 conda env create -f environment/quetzal-r.yml
 conda activate quetzal-r
 ```
 
-`environment/quetzal-r.yml` pins every R package to the exact version
-used at the v0.1 freeze. If you only want a specific stage you can skip
-either of the snakefile envs -- they alias the central yml.
+`environment/quetzal-r.yml` pins r-base to 4.4 and lets conda solve a
+self-consistent Bioconductor 3.20 + CRAN snapshot. The two per-Snakefile
+yml files under `scripts/*/envs/` are mirrors of the central yml --
+`snakemake --use-conda` builds the env automatically, so you don't need
+to run `conda env create` by hand unless you want the env outside of
+Snakemake (e.g. for running `fasttopics_to_flashier.R` interactively).
 
 ## Methods
 

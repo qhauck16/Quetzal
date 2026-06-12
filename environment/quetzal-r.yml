@@ -1,13 +1,16 @@
-# Quetzal v0.1 -- R environment for gene-level and genome-wide pipelines.
-# Versions pinned to what was installed in qhauck's rstudio-server
-# library at the v0.1 freeze (R 4.2.3 base). Bioconductor packages are
-# pulled from bioconda; the rest are CRAN packages re-packaged on
-# conda-forge.
+# Quetzal v0.1 R environment.
 #
-# Build with:
+# r-base is pinned to 4.4 so conda resolves a self-consistent
+# Bioconductor 3.20 + CRAN snapshot. Individual package versions are
+# intentionally NOT pinned -- the exact build hashes from qhauck's
+# interactive rstudio-server library don't all exist on conda-forge for
+# any single R minor; letting conda solve gets a working env on every
+# machine. The scripts run on R 4.4 without changes.
+#
+# Build it yourself with:
 #   conda env create -f environment/quetzal-r.yml
-# or, on Snakemake:
-#   snakemake --use-conda    (Snakefiles point at this yml via conda:)
+# or just let Snakemake build it via `--use-conda` (the Snakefiles point
+# at this yml via conda:).
 
 name: quetzal-r
 channels:
@@ -15,25 +18,24 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - r-base=4.2.3
-  # ---- CRAN packages ------------------------------------------------------
-  - r-tidyverse=2.0.0
-  - r-readr=2.1.6
-  - r-ggplot2=3.5.2
-  - r-data.table=1.17.8
-  - r-bit64=4.6.0=r43h57805ef_0      # 4.6.0-1 in CRAN; conda-forge pin
-  - r-patchwork=1.3.0
-  - r-ggforce=0.4.2
-  - r-htmlwidgets=1.6.4
-  - r-plotly=4.10.4
-  - r-nnls=1.5
-  - r-aod=1.3.3
-  - r-softimpute=1.4_1
-  - r-optparse=1.7.5
-  # ---- CRAN packages also distributed via bioconda mirroring -------------
-  - r-fasttopics=0.6_192
-  - r-flashier=1.0.58
-  # ---- Bioconductor packages ---------------------------------------------
-  - bioconductor-genomicranges=1.50.2
-  - bioconductor-ggbio=1.46.0
-  - bioconductor-rtracklayer=1.58.0
+  - r-base=4.4
+  # CRAN packages
+  - r-tidyverse
+  - r-readr
+  - r-ggplot2
+  - r-data.table
+  - r-bit64
+  - r-patchwork
+  - r-ggforce
+  - r-htmlwidgets
+  - r-plotly
+  - r-nnls
+  - r-aod
+  - r-softimpute
+  - r-optparse
+  - r-fasttopics
+  - r-flashier
+  # Bioconductor packages (Bioc 3.20 ships with R 4.4)
+  - bioconductor-genomicranges
+  - bioconductor-ggbio
+  - bioconductor-rtracklayer
