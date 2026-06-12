@@ -1,73 +1,115 @@
+# Quetzal v1.0 -- gene-level mode.
+#
+# Rule order (per gene):
+#   canonicalise        : raw input  -> matrix.RDS
+#   classify_junctions  : matrix.RDS -> matrix_classified.RDS
+#                         (gene_matrix input only; controlled by config)
+#   fit_pnmf            : matrix*.RDS -> res.RDS
+#   de_analysis         : (matrix, res) -> de_res.RDS
+#   make_plots          : (res, de_res, matrix, gencode) -> whole_factor.html
+#                                                          + de_factor.html
+#
+# Run from <repo>/scripts/gene_level/:
+#   snakemake --configfile ../../config/default_config.yaml --use-conda --jobs N
+
 import os
 from glob import glob
 
-############################################
-# --------------- CONFIG -------------------
-############################################
+configfile: "../../config/default_config.yaml"
 
-# Paths relative to scripts/gene_level/ (the Snakemake invocation cwd).
-# Outputs land under <repo>/output/gene_level/<chr>/<gene>/.
-SNAPTRON_BASE = "../../data/all_genes"
-OUTPUT_BASE   = "../../output/gene_level"
+INPUT_DIR    = config["input_dir"]
+INPUT_FMT    = config["input_format"]     # "snaptron" or "gene_matrix"
+OUT          = config["output_dir"] + "/gene_level"
+GENCODE      = config["gencode"]
+COMMON       = "../common"
 
-# Script
-SCRIPT1 = "gene_plots_and_objs.R"
+# In gene_level mode the "filter_unannotated" knob controls only one thing:
+# whether classify_junctions.R has to run for gene_matrix input. The
+# downstream NMF + DE + plotting steps are identical either way.
+NEEDS_CLASSIFY = (INPUT_FMT == "gene_matrix") and \
+                  bool(config.get("filter_unannotated", True))
 
-# Outputs (per gene)
-OUTPUT1_SUFFIXES = ["res.RDS", "de_res.RDS", "whole_factor.html"]
-
-# Static inputs (under data/ at the repo root)
-GENCODE       = "../../data/hg38_granges.RDS"
-TCGA_METADATA = "../../data/tcga_v2_samples.tsv"
-
-# Resources
-THREADS = 10
-
-# Factorization thresholds
-ELBOW_CUTOFF = 0.01
-MAX_FACTORS  = 10
-LFC_THRESH   = 2
-ABS_THRESH   = 0.01
-SVAL_THRESH  = 0.05
-
-# dat-generation parameters (from R script comments)
-MIN_JUNCTIONS_FOR_PCA        = 3
-GENE_RANGE_BOUND             = 2000
-AVG_CLUST_READ_COUNT_MIN     = 0
-MIN_SAMPLES_PER_JUNC         = 10
-AVG_SAMPLE_READS_PER_CLUSTER = 5
+if INPUT_FMT not in ("snaptron", "gene_matrix"):
+    raise ValueError("config.input_format must be 'snaptron' or 'gene_matrix' "
+                      f"(got '{INPUT_FMT}')")
 
 
 ############################################
-# -------- SNAPTRON-BASED DISCOVERY --------
+# -------- GENE DISCOVERY ------------------
 ############################################
 
-def get_genes():
-    genes = []
-    for chr_dir in sorted(glob(os.path.join(SNAPTRON_BASE, "chr*"))):
-        chr_name = os.path.basename(chr_dir)
-        snaptron_dir = os.path.join(chr_dir, "snaptron_output")
-
-        if not os.path.isdir(snaptron_dir):
-            continue
-
-        for snaptron_file in sorted(glob(os.path.join(snaptron_dir, "*_snaptron.tsv"))):
-            if os.path.getsize(snaptron_file) < 100:
+def _discover():
+    if INPUT_FMT == "snaptron":
+        pat, suffix, chr_idx = (
+            os.path.join(INPUT_DIR, "chr*/snaptron_output/*_snaptron.tsv"),
+            "_snaptron.tsv",
+            -3,
+        )
+    else:
+        pat, suffix, chr_idx = (
+            os.path.join(INPUT_DIR, "chr*/*.tsv"),
+            ".tsv",
+            -2,
+        )
+    info = []
+    for f in glob(pat):
+        try:
+            if os.path.getsize(f) < 100:
                 continue
+        except OSError:
+            continue
+        parts    = f.split(os.sep)
+        chr_name = parts[chr_idx]
+        gene     = os.path.basename(f)[: -len(suffix)]
+        info.append((chr_name, gene))
+    info.sort()
+    return info
 
-            gene_name = os.path.basename(snaptron_file).replace("_snaptron.tsv", "")
-            genes.append((chr_name, gene_name))
+GENE_INFO = _discover()
+CHRS      = [c for c, _ in GENE_INFO]
+GENES     = [g for _, g in GENE_INFO]
 
-    return genes
+
+############################################
+# -------- INPUT-FORMAT-AWARE I/O ----------
+############################################
+
+def canonicalise_input(wc):
+    if INPUT_FMT == "snaptron":
+        return f"{INPUT_DIR}/{wc.chr}/snaptron_output/{wc.gene}_snaptron.tsv"
+    return f"{INPUT_DIR}/{wc.chr}/{wc.gene}.tsv"
+
+CANONICALISE_SCRIPT = (f"{COMMON}/ingest_snaptron.R"
+                        if INPUT_FMT == "snaptron"
+                        else f"{COMMON}/ingest_gene_matrix.R")
+
+def post_canonicalise(wc):
+    if NEEDS_CLASSIFY:
+        return f"{OUT}/{wc.chr}/{wc.gene}/matrix_classified.RDS"
+    return f"{OUT}/{wc.chr}/{wc.gene}/matrix.RDS"
 
 
-GENE_INFO = get_genes()
+############################################
+# -------- OPTIONAL-ARG SHELL HELPERS ------
+############################################
 
-GENE_OUTPUTS = [
-    f"{OUTPUT_BASE}/{chr}/{gene}/{suffix}"
-    for chr, gene in GENE_INFO
-    for suffix in OUTPUT1_SUFFIXES
-]
+def _normal_filter_argstring():
+    nf  = config.get("normal_filter") or {}
+    col = nf.get("column")  or ""
+    pat = nf.get("pattern") or ""
+    sm  = config.get("sample_metadata") or ""
+    sid = config.get("sample_id_column") or "rail_id"
+    bits = [
+        f'--sample_metadata "{sm}"',
+        f'--normal_filter_column "{col}"',
+        f'--normal_filter_pattern "{pat}"',
+        f'--sample_id_column {sid}'
+    ]
+    if config.get("exclude_normals", False):
+        bits.append("--exclude_normals")
+    return " ".join(bits)
+
+NORMAL_FILTER_ARGS = _normal_filter_argstring()
 
 
 ############################################
@@ -76,65 +118,158 @@ GENE_OUTPUTS = [
 
 rule all:
     input:
-        GENE_OUTPUTS
+        expand(OUT + "/{chr}/{gene}/whole_factor.html",
+                zip, chr=CHRS, gene=GENES)
 
 
-############################################
-# Gene plots + objects (Snaptron -> NMF)
-############################################
-
-rule run_gene_plots_and_objs:
+rule canonicalise:
+    """Raw input -> canonical matrix.RDS (snaptron OR gene_matrix)."""
     input:
-        snaptron=SNAPTRON_BASE + "/{chr}/snaptron_output/{gene}_snaptron.tsv"
+        canonicalise_input
     output:
-        res          = OUTPUT_BASE + "/{chr}/{gene}/res.RDS",
-        de_res       = OUTPUT_BASE + "/{chr}/{gene}/de_res.RDS",
-        whole_factor = OUTPUT_BASE + "/{chr}/{gene}/whole_factor.html"
+        OUT + "/{chr}/{gene}/matrix.RDS"
     params:
-        # dat-generation params
-        min_junctions_for_pca        = MIN_JUNCTIONS_FOR_PCA,
-        gene_range_bound             = GENE_RANGE_BOUND,
-        avg_clust_read_count_min     = AVG_CLUST_READ_COUNT_MIN,
-        min_samples_per_junc         = MIN_SAMPLES_PER_JUNC,
-        avg_sample_reads_per_cluster = AVG_SAMPLE_READS_PER_CLUSTER,
+        script              = CANONICALISE_SCRIPT,
+        gencode             = GENCODE,
+        normal_filter_args  = NORMAL_FILTER_ARGS,
+        min_samples_per_junc             = config["min_samples_per_junc"],
+        gene_range_bound                 = config["gene_range_bound"],
+        min_clust_read_count_avg         = config["min_clust_read_count_avg"],
+        min_reads_per_sample_per_cluster = config["min_reads_per_sample_per_cluster"]
+    conda:
+        "envs/rscript.yml"
+    threads: 1
+    resources:
+        mem_mb = 10000
+    shell:
+        """
+        Rscript {params.script} \\
+            --input {input} \\
+            --gene_name {wildcards.gene} \\
+            --chr {wildcards.chr} \\
+            --gencode {params.gencode} \\
+            --output {output} \\
+            --min_samples_per_junc {params.min_samples_per_junc} \\
+            --gene_range_bound {params.gene_range_bound} \\
+            --min_clust_read_count_avg {params.min_clust_read_count_avg} \\
+            --min_reads_per_sample_per_cluster {params.min_reads_per_sample_per_cluster} \\
+            {params.normal_filter_args}
+        """
 
-        # factorization params
-        gencode        = GENCODE,
-        tcga_metadata  = TCGA_METADATA,
-        threads        = THREADS,
-        elbow_cutoff   = ELBOW_CUTOFF,
-        max_factors    = MAX_FACTORS,
-        lfc_thresh     = LFC_THRESH,
-        abs_thresh     = ABS_THRESH,
-        sval_thresh    = SVAL_THRESH,
-        script         = SCRIPT1,
-        output_base    = OUTPUT_BASE
+
+rule classify_junctions:
+    """gene_matrix only: fill matrix$junction_info$annotated from gencode.
+    Only fires when post_canonicalise() actually requests
+    matrix_classified.RDS (i.e. input_format=gene_matrix and
+    filter_unannotated=true)."""
+    input:
+        OUT + "/{chr}/{gene}/matrix.RDS"
+    output:
+        OUT + "/{chr}/{gene}/matrix_classified.RDS"
+    params:
+        script  = COMMON + "/classify_junctions.R",
+        gencode = GENCODE
+    conda:
+        "envs/rscript.yml"
+    threads: 1
+    resources:
+        mem_mb = 4000
+    shell:
+        """
+        Rscript {params.script} \\
+            --matrix {input} \\
+            --gencode {params.gencode} \\
+            --output {output}
+        """
+
+
+rule fit_pnmf:
+    """Poisson NMF per gene."""
+    input:
+        post_canonicalise
+    output:
+        OUT + "/{chr}/{gene}/res.RDS"
+    params:
+        script             = COMMON + "/fit_pnmf.R",
+        max_factors        = config["max_factors"],
+        variance_explained = config["variance_explained"]
     conda:
         "envs/rscript.yml"
     threads: 10
     resources:
-        mem_mb=10000
+        mem_mb = 10000
     shell:
         """
-        set -euo pipefail
-        mkdir -p {params.output_base}/{wildcards.chr}/{wildcards.gene}
+        Rscript {params.script} \\
+            --matrix {input} \\
+            --output {output} \\
+            --max_factors {params.max_factors} \\
+            --variance_explained {params.variance_explained} \\
+            --threads {threads}
+        """
 
-        Rscript {params.script} \
-            {params.min_junctions_for_pca} \
-            {params.gene_range_bound} \
-            {params.avg_clust_read_count_min} \
-            {input.snaptron} \
-            {params.min_samples_per_junc} \
-            {params.avg_sample_reads_per_cluster} \
-            {wildcards.gene} \
-            {wildcards.chr} \
-            {params.gencode} \
-            {params.tcga_metadata} \
-            {params.threads} \
-            {params.elbow_cutoff} \
-            {params.max_factors} \
-            {params.lfc_thresh} \
-            {params.abs_thresh} \
-            {params.sval_thresh} \
-            {params.output_base}
+
+rule de_analysis:
+    """fastTopics::de_analysis on the multinom-converted fit."""
+    input:
+        res    = OUT + "/{chr}/{gene}/res.RDS",
+        matrix = post_canonicalise
+    output:
+        OUT + "/{chr}/{gene}/de_res.RDS"
+    params:
+        script = "de_analysis.R"
+    conda:
+        "envs/rscript.yml"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    shell:
+        """
+        Rscript {params.script} \\
+            --res {input.res} \\
+            --matrix {input.matrix} \\
+            --output {output} \\
+            --threads {threads}
+        """
+
+
+rule make_plots:
+    """Structure plot + gene-model junction arcs -> per-gene .html bundles."""
+    input:
+        res    = OUT + "/{chr}/{gene}/res.RDS",
+        de_res = OUT + "/{chr}/{gene}/de_res.RDS",
+        matrix = post_canonicalise
+    output:
+        whole = OUT + "/{chr}/{gene}/whole_factor.html",
+        de    = OUT + "/{chr}/{gene}/de_factor.html"
+    params:
+        script           = "make_plots.R",
+        gencode          = GENCODE,
+        sample_metadata  = (config.get("sample_metadata") or ""),
+        sample_id_column = (config.get("sample_id_column") or "rail_id"),
+        grouping_column  = (config.get("structure_plot_grouping_column") or ""),
+        lfc_thresh       = config.get("lfc_thresh", 2),
+        abs_thresh       = config.get("abs_thresh", 0.01),
+        sval_thresh      = config.get("sval_thresh", 0.05)
+    conda:
+        "envs/rscript.yml"
+    threads: 2
+    resources:
+        mem_mb = 8000
+    shell:
+        """
+        Rscript {params.script} \\
+            --res {input.res} \\
+            --de_res {input.de_res} \\
+            --matrix {input.matrix} \\
+            --gencode {params.gencode} \\
+            --gene_name {wildcards.gene} \\
+            --whole_output {output.whole} \\
+            --de_output {output.de} \\
+            --sample_metadata "{params.sample_metadata}" \\
+            --sample_id_column {params.sample_id_column} \\
+            --grouping_column "{params.grouping_column}" \\
+            --lfc_thresh {params.lfc_thresh} \\
+            --abs_thresh {params.abs_thresh} \\
+            --sval_thresh {params.sval_thresh}
         """
