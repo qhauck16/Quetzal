@@ -35,8 +35,10 @@ dependencies:
   - r-optparse
   # NOTE: r-fasttopics and r-flashier aren't reliably packaged for
   # conda-forge; r-remotes lets the R scripts auto-install them from
-  # GitHub on first invocation.
+  # GitHub on first invocation. RcppParallel (a fastTopics dep) needs
+  # to compile from source, so we also need a C++ toolchain in the env.
   - r-remotes
+  - gxx_linux-64
   # Bioconductor packages (Bioc 3.20 ships with R 4.4)
   - bioconductor-genomicranges
   - bioconductor-ggbio

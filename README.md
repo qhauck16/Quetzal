@@ -29,13 +29,17 @@ Quetzal/
 │       └── envs/fasttopics.yml
 ├── data/
 │   ├── hg38_granges.RDS                  (~24 MB)
-│   ├── analyte.tsv                       (~18 MB)
-│   ├── all_genes/                        (NOT in repo -- per-chr snaptron junction tables)
-│   └── productive_unproductive/          (~8 MB; chr<N>_*.tsv)
+│   └── all_genes/                        (NOT in repo -- per-chr snaptron junction tables)
 └── output/                               (all pipeline outputs land here)
     ├── genome_wide/<chr>/FastTopics_output/<gene>/res.RDS
     └── gene_level/<chr>/<gene>/{res,de_res}.RDS, *.tsv, *.html
 ```
+
+> **Note (v1.0 in progress).** Main is currently moving past v0.1 toward a
+> generalised v1.0 release: configfile-driven, supports user-supplied per-gene
+> matrices in addition to snaptron, drops the TCGA-specific QC step entirely.
+> v0.1 stays immutable at the `v0.1.0` tag — `git checkout v0.1.0` for the
+> manuscript snapshot.
 
 ### Data not shipped with the repo
 
