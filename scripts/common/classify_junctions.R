@@ -24,7 +24,7 @@ option_list <- list(
   make_option("--matrix",  type = "character",
               help = "input matrix.RDS (junction_info$annotated may be NA)"),
   make_option("--gencode", type = "character",
-              default = "data/hg38_granges.RDS",
+              default = "data/gencode_v46_granges.RDS",
               help = "gencode source (.RDS) [%default]"),
   make_option("--output",  type = "character",
               help = "output matrix.RDS with junction_info$annotated populated")
