@@ -1,10 +1,11 @@
 #!/usr/bin/env Rscript
-# Quetzal v0.1 - fastTopics -> softImpute -> flashier end-to-end
+# Quetzal v0.1 - genome-wide method, Step B (Step A is lf_Snakefile).
 #
-# Takes the gene-level fastTopics output directories produced by the
-# genome_wide leafcutter snakefile (lf_Snakefile) and produces the final
-# genome-wide multinomial flashier object used by all downstream
-# (factor characterisation, NMD investigation, diff-splicing) analyses.
+# Reads the per-gene fastTopics res.RDS files written by lf_Snakefile
+# (output/genome_wide/<chr>/FastTopics_output/<gene>/res.RDS) and
+# collapses them into the genome-wide flashier object used by every
+# downstream genome-wide analysis. This script has no relationship
+# to the separate gene-level method (scripts/gene_level/).
 #
 # Steps:
 #   1. Iterate every (chr, gene) FastTopics_output/res.RDS:
@@ -46,23 +47,23 @@ suppressPackageStartupMessages({
 })
 
 option_list <- list(
-  make_option("--gene_dir",       default = "../260116_filters",
-              help = "root directory holding chr<N>/FastTopics_output/<GENE>/res.RDS"),
-  make_option("--snaptron_root",  default = "../../all_genes",
-              help = "root directory holding chr<N>/snaptron_output/<GENE>_snaptron.tsv"),
-  make_option("--tcga_meta",      default = "data/tcga_v2_samples.tsv",
+  make_option("--gene_dir",        default = "output/genome_wide",
+              help = "root holding chr<N>/FastTopics_output/<GENE>/res.RDS (Step A output)"),
+  make_option("--snaptron_root",   default = "data/all_genes",
+              help = "root holding chr<N>/snaptron_output/<GENE>_snaptron.tsv"),
+  make_option("--tcga_meta",       default = "data/tcga_v2_samples.tsv",
               help = "TCGA v2 sample metadata TSV"),
-  make_option("--analyte",        default = "data/analyte.tsv",
+  make_option("--analyte",         default = "data/analyte.tsv",
               help = "TCGA analyte table (carries RIN scores)"),
-  make_option("--pu_dir",         default = "data/productive_unproductive",
+  make_option("--pu_dir",          default = "data/productive_unproductive",
               help = "directory of chr<N>_productive_unproductive.tsv files"),
   make_option("--sample_fraction", type = "numeric", default = 0.8,
               help = "min fraction of TCGA samples a gene must cover [default %default]"),
-  make_option("--features_out",   default = "softimpute_features.tsv",
+  make_option("--features_out",    default = "output/genome_wide/softimpute_features.tsv",
               help = "intermediate per-sample factor-of-interest matrix"),
-  make_option("--flash_out",      default = "softimpute_flash_300_qc_filtered.RDS",
+  make_option("--flash_out",       default = "output/genome_wide/softimpute_flash_300_qc_filtered.RDS",
               help = "final flashier object"),
-  make_option("--greedy_kmax",    type = "integer", default = 300L,
+  make_option("--greedy_kmax",     type = "integer", default = 300L,
               help = "flashier greedy_Kmax [default %default]")
 )
 opt <- parse_args(OptionParser(option_list = option_list))
