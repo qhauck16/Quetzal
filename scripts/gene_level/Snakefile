@@ -10,69 +10,31 @@ from glob import glob
 SNAPTRON_BASE = "../../data/all_genes"
 OUTPUT_BASE   = "../../output/gene_level"
 
-# Scripts
+# Script
 SCRIPT1 = "gene_plots_and_objs.R"
-SCRIPT2 = "cancer_specific_factors.R"
 
-# Outputs
+# Outputs (per gene)
 OUTPUT1_SUFFIXES = ["res.RDS", "de_res.RDS", "whole_factor.html"]
-OUTPUT2_SUFFIX = "results.tsv"
 
-# Static inputs (data/ at the repo root unless noted)
-GENCODE         = "../../data/hg38_granges.RDS"
-TCGA_METADATA   = "../../data/tcga_v2_samples.tsv"
-RIN_SCORE_FILE  = "../../data/analyte.tsv"
-# External v0.1 requirements -- user must point these at their copies.
-# v1.0 will distribute / auto-fetch them.
-GTEX_DAT_DIR    = "../../gtex/genome_wide/260120_filters/"
-PSI_DIR         = "../leafcutter/leaf2_try/new_psi_files"
-GTEX_METADATA   = "../../gtexv2_metadata.tsv"
-COVARIATE_TABLE = "../standardized_covariates.RDS"
+# Static inputs (under data/ at the repo root)
+GENCODE       = "../../data/hg38_granges.RDS"
+TCGA_METADATA = "../../data/tcga_v2_samples.tsv"
 
 # Resources
 THREADS = 10
 
 # Factorization thresholds
 ELBOW_CUTOFF = 0.01
-MAX_FACTORS = 10
-LFC_THRESH = 2
-ABS_THRESH = 0.01
-SVAL_THRESH = 0.05
-RARE_FACTOR_THRESH = 0.05
-PSI_PVAL_THRESH = 0.05
-MIN_NUM_IN_CANCER = 30
-N_TCGA_COHORTS = 33   # used in the lm-Bonferroni denominator below
-
-
-# lm Bonferroni threshold for the (factor x cohort) test in
-# cancer_specific_factors.R. Denominator = (# genes whose Poisson NMF
-# actually ran, i.e. res.RDS > 100 bytes) x MAX_FACTORS x N_TCGA_COHORTS.
-#
-# Re-computed at every Snakemake invocation: first run finds 0 res.RDS
-# files (placeholder threshold), but the cancer_specific_factors rule
-# can't fire yet because its input doesn't exist. Once gene_plots_and_objs
-# has populated the res.RDS files, subsequent invocations see the right
-# count and the threshold tightens to a stable value.
-def count_processed_genes():
-    count = 0
-    for chr_dir in sorted(glob(os.path.join(OUTPUT_BASE, "chr*"))):
-        for gene_dir in glob(os.path.join(chr_dir, "*")):
-            res_path = os.path.join(gene_dir, "res.RDS")
-            if os.path.exists(res_path) and os.path.getsize(res_path) > 100:
-                count += 1
-    return count
-
-N_PROCESSED_GENES = count_processed_genes()
-if N_PROCESSED_GENES > 0:
-    LM_BONF_THRESH = 0.05 / (N_PROCESSED_GENES * MAX_FACTORS * N_TCGA_COHORTS)
-else:
-    LM_BONF_THRESH = 0.05      # placeholder; downstream rule can't run yet
+MAX_FACTORS  = 10
+LFC_THRESH   = 2
+ABS_THRESH   = 0.01
+SVAL_THRESH  = 0.05
 
 # dat-generation parameters (from R script comments)
-MIN_JUNCTIONS_FOR_PCA = 3
-GENE_RANGE_BOUND = 2000
-AVG_CLUST_READ_COUNT_MIN = 0
-MIN_SAMPLES_PER_JUNC = 10
+MIN_JUNCTIONS_FOR_PCA        = 3
+GENE_RANGE_BOUND             = 2000
+AVG_CLUST_READ_COUNT_MIN     = 0
+MIN_SAMPLES_PER_JUNC         = 10
 AVG_SAMPLE_READS_PER_CLUSTER = 5
 
 
@@ -101,15 +63,10 @@ def get_genes():
 
 GENE_INFO = get_genes()
 
-GENE_OUTPUTS_SCRIPT1 = [
+GENE_OUTPUTS = [
     f"{OUTPUT_BASE}/{chr}/{gene}/{suffix}"
     for chr, gene in GENE_INFO
     for suffix in OUTPUT1_SUFFIXES
-]
-
-GENE_OUTPUTS_SCRIPT2 = [
-    f"{OUTPUT_BASE}/{chr}/{gene}/{OUTPUT2_SUFFIX}"
-    for chr, gene in GENE_INFO
 ]
 
 
@@ -119,39 +76,39 @@ GENE_OUTPUTS_SCRIPT2 = [
 
 rule all:
     input:
-        GENE_OUTPUTS_SCRIPT1 + GENE_OUTPUTS_SCRIPT2
+        GENE_OUTPUTS
 
 
 ############################################
-# Gene plots + objects (Snaptron → NMF)
+# Gene plots + objects (Snaptron -> NMF)
 ############################################
 
 rule run_gene_plots_and_objs:
     input:
         snaptron=SNAPTRON_BASE + "/{chr}/snaptron_output/{gene}_snaptron.tsv"
     output:
-        res         = OUTPUT_BASE + "/{chr}/{gene}/res.RDS",
-        de_res      = OUTPUT_BASE + "/{chr}/{gene}/de_res.RDS",
-        whole_factor= OUTPUT_BASE + "/{chr}/{gene}/whole_factor.html"
+        res          = OUTPUT_BASE + "/{chr}/{gene}/res.RDS",
+        de_res       = OUTPUT_BASE + "/{chr}/{gene}/de_res.RDS",
+        whole_factor = OUTPUT_BASE + "/{chr}/{gene}/whole_factor.html"
     params:
         # dat-generation params
-        min_junctions_for_pca=MIN_JUNCTIONS_FOR_PCA,
-        gene_range_bound=GENE_RANGE_BOUND,
-        avg_clust_read_count_min=AVG_CLUST_READ_COUNT_MIN,
-        min_samples_per_junc=MIN_SAMPLES_PER_JUNC,
-        avg_sample_reads_per_cluster=AVG_SAMPLE_READS_PER_CLUSTER,
+        min_junctions_for_pca        = MIN_JUNCTIONS_FOR_PCA,
+        gene_range_bound             = GENE_RANGE_BOUND,
+        avg_clust_read_count_min     = AVG_CLUST_READ_COUNT_MIN,
+        min_samples_per_junc         = MIN_SAMPLES_PER_JUNC,
+        avg_sample_reads_per_cluster = AVG_SAMPLE_READS_PER_CLUSTER,
 
         # factorization params
-        gencode=GENCODE,
-        tcga_metadata=TCGA_METADATA,
-        threads=THREADS,
-        elbow_cutoff=ELBOW_CUTOFF,
-        max_factors=MAX_FACTORS,
-        lfc_thresh=LFC_THRESH,
-        abs_thresh=ABS_THRESH,
-        sval_thresh=SVAL_THRESH,
-        script=SCRIPT1,
-        output_base=OUTPUT_BASE
+        gencode        = GENCODE,
+        tcga_metadata  = TCGA_METADATA,
+        threads        = THREADS,
+        elbow_cutoff   = ELBOW_CUTOFF,
+        max_factors    = MAX_FACTORS,
+        lfc_thresh     = LFC_THRESH,
+        abs_thresh     = ABS_THRESH,
+        sval_thresh    = SVAL_THRESH,
+        script         = SCRIPT1,
+        output_base    = OUTPUT_BASE
     conda:
         "envs/rscript.yml"
     threads: 10
@@ -181,63 +138,3 @@ rule run_gene_plots_and_objs:
             {params.sval_thresh} \
             {params.output_base}
         """
-
-
-############################################
-# Cancer-specific factors
-############################################
-
-rule run_cancer_specific_factors:
-    input:
-        res    = OUTPUT_BASE + "/{chr}/{gene}/res.RDS",
-        de_res = OUTPUT_BASE + "/{chr}/{gene}/de_res.RDS",
-        covars = COVARIATE_TABLE
-    output:
-        results   = OUTPUT_BASE + "/{chr}/{gene}/results.tsv",
-        junctions = OUTPUT_BASE + "/{chr}/{gene}/junction_results.tsv",
-        n_bb      = OUTPUT_BASE + "/{chr}/{gene}/n_bb_tests.tsv"
-    params:
-        tcga_metadata=TCGA_METADATA,
-        gtex_metadata=GTEX_METADATA,
-        psi_dir=PSI_DIR,
-        lfc_thresh=LFC_THRESH,
-        abs_thresh=ABS_THRESH,
-        sval_thresh=SVAL_THRESH,
-        # lm Bonferroni threshold, computed at parse time from
-        # N_PROCESSED_GENES x MAX_FACTORS x N_TCGA_COHORTS.
-        lm_bonf_thresh=LM_BONF_THRESH,
-        rare_factor_thresh=RARE_FACTOR_THRESH,
-        psi_pval_thresh=PSI_PVAL_THRESH,
-        min_num_in_cancer=MIN_NUM_IN_CANCER,
-        script=SCRIPT2,
-        gtex_dat_dir=GTEX_DAT_DIR,
-        output_base=OUTPUT_BASE
-    conda:
-        "envs/rscript.yml"
-    resources:
-        mem_mb=10000
-    shell:
-        """
-        set -euo pipefail
-        mkdir -p {params.output_base}/{wildcards.chr}/{wildcards.gene}
-
-        Rscript {params.script} \
-            {input.res} \
-            {input.de_res} \
-            {params.tcga_metadata} \
-            {params.gtex_metadata} \
-            {input.covars} \
-            {params.psi_dir} \
-            {params.lfc_thresh} \
-            {params.abs_thresh} \
-            {params.sval_thresh} \
-            {params.lm_bonf_thresh} \
-            {params.rare_factor_thresh} \
-            {params.psi_pval_thresh} \
-            {params.min_num_in_cancer} \
-            {wildcards.chr} \
-            {wildcards.gene} \
-            {params.gtex_dat_dir} \
-            {params.output_base}
-        """
-
