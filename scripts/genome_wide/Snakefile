@@ -1,0 +1,267 @@
+# Quetzal v1.0 -- genome-wide mode.
+#
+# Rule order:
+#   canonicalise        : raw input  -> matrix.RDS         (per gene)
+#   classify_junctions  : matrix.RDS -> matrix_classified.RDS
+#                         (gene_matrix input + filter_unannotated only)
+#   fit_pnmf            : matrix.RDS|matrix_classified.RDS -> res.RDS
+#   extract_unann_factors: (matrix, res) -> unann_factors.tsv (per gene)
+#   softimpute_flash    : gather all unann_factors.tsv -> softimpute_flash.RDS
+#
+# Run from <repo>/scripts/genome_wide/:
+#   snakemake --configfile ../../config/default_config.yaml --use-conda --jobs N
+# Per-rule SLURM dispatch by adding e.g.
+#   --executor slurm --default-resources slurm_partition=... slurm_account=...
+
+import os
+from glob import glob
+
+configfile: "../../config/default_config.yaml"
+
+INPUT_DIR  = config["input_dir"]
+INPUT_FMT  = config["input_format"]    # "snaptron" or "gene_matrix"
+OUT        = config["output_dir"] + "/genome_wide"
+GENCODE    = config["gencode"]
+COMMON     = "../common"
+
+FILTER_UNANN = bool(config.get("filter_unannotated", True))
+
+if INPUT_FMT not in ("snaptron", "gene_matrix"):
+    raise ValueError("config.input_format must be 'snaptron' or 'gene_matrix' "
+                      f"(got '{INPUT_FMT}')")
+
+
+############################################
+# -------- GENE DISCOVERY ------------------
+############################################
+
+def _discover():
+    """Walk INPUT_DIR/chr*/... to find every (chr, gene). v0.1 layout
+    assumed throughout v1.0; flat layouts are a v1.x add-on."""
+    if INPUT_FMT == "snaptron":
+        pat, suffix, chr_idx = (
+            os.path.join(INPUT_DIR, "chr*/snaptron_output/*_snaptron.tsv"),
+            "_snaptron.tsv",
+            -3,                          # parts: ..., chr<N>, snaptron_output, <gene>_snaptron.tsv
+        )
+    else:
+        pat, suffix, chr_idx = (
+            os.path.join(INPUT_DIR, "chr*/*.tsv"),
+            ".tsv",
+            -2,                          # parts: ..., chr<N>, <gene>.tsv
+        )
+    info = []
+    for f in glob(pat):
+        try:
+            if os.path.getsize(f) < 100:
+                continue
+        except OSError:
+            continue
+        parts    = f.split(os.sep)
+        chr_name = parts[chr_idx]
+        gene     = os.path.basename(f)[: -len(suffix)]
+        info.append((chr_name, gene))
+    info.sort()
+    return info
+
+GENE_INFO = _discover()
+CHRS      = [c for c, _ in GENE_INFO]
+GENES     = [g for _, g in GENE_INFO]
+
+
+############################################
+# -------- INPUT-FORMAT-AWARE I/O ----------
+############################################
+
+def canonicalise_input(wc):
+    if INPUT_FMT == "snaptron":
+        return f"{INPUT_DIR}/{wc.chr}/snaptron_output/{wc.gene}_snaptron.tsv"
+    return f"{INPUT_DIR}/{wc.chr}/{wc.gene}.tsv"
+
+CANONICALISE_SCRIPT = (f"{COMMON}/ingest_snaptron.R"
+                        if INPUT_FMT == "snaptron"
+                        else f"{COMMON}/ingest_gene_matrix.R")
+
+# Path delivered to fit_pnmf / extract_unann_factors. Branches so that the
+# `classify_junctions` rule only fires for gene_matrix + filter_unannotated;
+# everything else feeds matrix.RDS directly.
+def post_canonicalise(wc):
+    needs_classify = (INPUT_FMT == "gene_matrix") and FILTER_UNANN
+    if needs_classify:
+        return f"{OUT}/{wc.chr}/{wc.gene}/matrix_classified.RDS"
+    return f"{OUT}/{wc.chr}/{wc.gene}/matrix.RDS"
+
+
+############################################
+# -------- OPTIONAL-ARG SHELL HELPERS ------
+############################################
+
+def _normal_filter_argstring():
+    """Build the --exclude_normals / --normal_filter_* flags. Always pass
+    the column / pattern args (R script tolerates empty strings) and only
+    flip the --exclude_normals flag itself based on config."""
+    nf = config.get("normal_filter") or {}
+    col = nf.get("column")  or ""
+    pat = nf.get("pattern") or ""
+    sm  = config.get("sample_metadata") or ""
+    sid = config.get("sample_id_column") or "rail_id"
+    bits = [
+        f'--sample_metadata "{sm}"',
+        f'--normal_filter_column "{col}"',
+        f'--normal_filter_pattern "{pat}"',
+        f'--sample_id_column {sid}'
+    ]
+    if config.get("exclude_normals", False):
+        bits.append("--exclude_normals")
+    return " ".join(bits)
+
+NORMAL_FILTER_ARGS = _normal_filter_argstring()
+
+
+############################################
+# ---------------- RULES -------------------
+############################################
+
+rule all:
+    input:
+        OUT + "/softimpute_flash.RDS"
+
+
+rule canonicalise:
+    """Raw input -> canonical matrix.RDS (snaptron OR gene_matrix)."""
+    input:
+        canonicalise_input
+    output:
+        OUT + "/{chr}/{gene}/matrix.RDS"
+    params:
+        script              = CANONICALISE_SCRIPT,
+        gencode             = GENCODE,
+        normal_filter_args  = NORMAL_FILTER_ARGS,
+        min_samples_per_junc             = config["min_samples_per_junc"],
+        gene_range_bound                 = config["gene_range_bound"],
+        min_clust_read_count_avg         = config["min_clust_read_count_avg"],
+        min_reads_per_sample_per_cluster = config["min_reads_per_sample_per_cluster"]
+    conda:
+        "envs/rscript.yml"
+    threads: 1
+    resources:
+        mem_mb = 10000
+    shell:
+        """
+        Rscript {params.script} \\
+            --input {input} \\
+            --gene_name {wildcards.gene} \\
+            --chr {wildcards.chr} \\
+            --gencode {params.gencode} \\
+            --output {output} \\
+            --min_samples_per_junc {params.min_samples_per_junc} \\
+            --gene_range_bound {params.gene_range_bound} \\
+            --min_clust_read_count_avg {params.min_clust_read_count_avg} \\
+            --min_reads_per_sample_per_cluster {params.min_reads_per_sample_per_cluster} \\
+            {params.normal_filter_args}
+        """
+
+
+rule classify_junctions:
+    """Fill matrix$junction_info$annotated from gencode.
+    Only fires when input_format=gene_matrix AND filter_unannotated=true
+    (because that's the only config where downstream rules ask for
+    matrix_classified.RDS instead of matrix.RDS)."""
+    input:
+        OUT + "/{chr}/{gene}/matrix.RDS"
+    output:
+        OUT + "/{chr}/{gene}/matrix_classified.RDS"
+    params:
+        script  = COMMON + "/classify_junctions.R",
+        gencode = GENCODE
+    conda:
+        "envs/rscript.yml"
+    threads: 1
+    resources:
+        mem_mb = 4000
+    shell:
+        """
+        Rscript {params.script} \\
+            --matrix {input} \\
+            --gencode {params.gencode} \\
+            --output {output}
+        """
+
+
+rule fit_pnmf:
+    """Poisson NMF per gene."""
+    input:
+        post_canonicalise
+    output:
+        OUT + "/{chr}/{gene}/res.RDS"
+    params:
+        script             = COMMON + "/fit_pnmf.R",
+        max_factors        = config["max_factors"],
+        variance_explained = config["variance_explained"]
+    conda:
+        "envs/rscript.yml"
+    threads: 10
+    resources:
+        mem_mb = 10000
+    shell:
+        """
+        Rscript {params.script} \\
+            --matrix {input} \\
+            --output {output} \\
+            --max_factors {params.max_factors} \\
+            --variance_explained {params.variance_explained} \\
+            --threads {threads}
+        """
+
+
+rule extract_unann_factors:
+    """Per-gene unannotated-factor (or all-factor) selection -> wide TSV."""
+    input:
+        matrix = post_canonicalise,
+        res    = OUT + "/{chr}/{gene}/res.RDS"
+    output:
+        OUT + "/{chr}/{gene}/unann_factors.tsv"
+    params:
+        script       = COMMON + "/extract_unann_factors.R",
+        filter_unann = "TRUE" if FILTER_UNANN else "FALSE",
+        ratio        = config["unann_factor_loading_ratio"]
+    conda:
+        "envs/rscript.yml"
+    threads: 1
+    resources:
+        mem_mb = 4000
+    shell:
+        """
+        Rscript {params.script} \\
+            --matrix {input.matrix} \\
+            --res {input.res} \\
+            --output {output} \\
+            --filter_unannotated {params.filter_unann} \\
+            --unann_factor_loading_ratio {params.ratio}
+        """
+
+
+rule softimpute_flash:
+    """Final genome-wide softImpute + flashier collapse."""
+    input:
+        expand(OUT + "/{chr}/{gene}/unann_factors.tsv",
+                zip, chr=CHRS, gene=GENES)
+    output:
+        OUT + "/softimpute_flash.RDS"
+    params:
+        input_dir       = OUT,
+        sample_fraction = config["sample_fraction"],
+        greedy_kmax     = config["greedy_kmax"]
+    conda:
+        "envs/rscript.yml"
+    threads: 4
+    resources:
+        mem_mb = 40000
+    shell:
+        """
+        Rscript softimpute_flash.R \\
+            --input_dir {params.input_dir} \\
+            --output {output} \\
+            --sample_fraction {params.sample_fraction} \\
+            --greedy_kmax {params.greedy_kmax}
+        """
