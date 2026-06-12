@@ -1,0 +1,72 @@
+# Quetzal v1.0 default config. Copy this file and override knobs in your own
+# config; pass it via `snakemake --configfile path/to/your_config.yaml`.
+
+# ---------- input ----------
+# `snaptron`     -> <input_dir>/<chr>/snaptron_output/<gene>_snaptron.tsv
+# `gene_matrix`  -> <input_dir>/<chr>/<gene>.tsv  (wide TSV; rows = junction_id,
+#                   cols = sample_id, first column header empty or "junction_id")
+input_format: snaptron
+input_dir: data/all_genes
+
+# ---------- output ----------
+# under <output_dir> the snakefiles will create gene_level/ and/or genome_wide/
+output_dir: output
+
+# ---------- gencode ----------
+# Default = the hg38 GRanges RDS shipped under data/. .gtf / .gtf.gz are also
+# supported by classify_junctions.R (loaded via rtracklayer::import).
+gencode: data/hg38_granges.RDS
+
+# ---------- per-gene NMF knobs ----------
+# Upper bound on k for the per-gene Poisson NMF. gene_level mode tends to be
+# happy with a low cap (visualisation); genome_wide mode bumps to ~32.
+max_factors: 10
+
+# Threshold on cumulative PCA variance used to choose num_factors.
+# (v0.1 used the inverted phrasing `elbow_cutoff = 0.01`.)
+variance_explained: 0.99
+
+# Junctions must be supported in at least this many samples (snaptron's
+# `samples_count` column; for gene_matrix input, computed from the counts
+# matrix itself).
+min_samples_per_junc: 10
+
+# Samples whose mean reads-per-junction-cluster falls below this are dropped
+# before the NMF fits. (v0.1 called this avg_sample_reads_per_cluster.)
+min_reads_per_sample_per_cluster: 5
+
+# Per-cluster average-read floor (v0.1's avg_clust_read_count_min).
+min_clust_read_count_avg: 0
+
+# Junctions kept must fall within +/- this many bp of the gene's gencode
+# coordinate range.
+gene_range_bound: 2000
+
+# ---------- sample-level filtering (optional, off by default) ----------
+# Path to a metadata TSV. Needed only if you enable normal-filtering or
+# gene_level structure-plot grouping.
+sample_metadata: null
+
+# Set both `exclude_normals: true` AND `normal_filter.{column, pattern}` to
+# silently drop "normal" samples upfront. (v0.1 did this by default for TCGA.)
+exclude_normals: false
+normal_filter:
+  column: null   # e.g. "cgc_sample_sample_type"
+  pattern: null  # e.g. "Normal"
+
+# ---------- gene_level structure-plot grouping (optional) ----------
+# Column from sample_metadata used to group samples in the structure plot.
+# When null the structure plot draws one ungrouped block.
+structure_plot_grouping_column: null
+
+# ---------- genome_wide specific ----------
+# A factor is "unannotated-loaded" when:
+#   max(unann_loading) * unann_factor_loading_ratio > max(overall_loading)
+unann_factor_loading_ratio: 2.0
+
+# Min fraction of input samples a gene must cover to contribute its factors
+# to the final flashier matrix.
+sample_fraction: 0.8
+
+# flashier::flash greedy_Kmax in the final softimpute + flashier collapse.
+greedy_kmax: 300
