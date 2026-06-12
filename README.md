@@ -23,7 +23,8 @@ Quetzal/
 │   │   ├── cancer_specific_factors.R
 │   │   └── envs/rscript.yml      # symlink-equivalent to ../../environment/quetzal-r.yml
 │   └── genome_wide/
-│       ├── lf_Snakefile          # leafcutter -> per-gene fastTopics (run once per chr)
+│       ├── lf_Snakefile               # leafcutter -> per-gene fastTopics (run once per chr)
+│       ├── setting_up_snakemake.sh    # example SLURM dispatcher (edit placeholders before use)
 │       ├── tcga_LF_saving.R
 │       ├── fasttopics_to_flashier.R   # full FastTopics -> softImpute -> flashier
 │       └── envs/fasttopics.yml
@@ -85,9 +86,13 @@ External requirement: `data/all_genes/<chr>/snaptron_output/<gene>_snaptron.tsv`
 for every gene you want factorised. v0.1 expects this path to exist;
 v1.0 will ship a generator/loader for it.
 
-v0.1 deliberately ships no dispatch wrapper — parallelise across
+v0.1 ships no required dispatch wrapper -- parallelise across
 chromosomes however your cluster prefers (SLURM array, snakemake
-profile, a `for` loop, ...). v1.0 will provide a built-in dispatcher.
+profile, a `for` loop, ...). `setting_up_snakemake.sh` next to
+`lf_Snakefile` is one concrete example we used for the manuscript;
+edit the two SLURM placeholders at the top of the script (or rewrite
+the snakemake invocation for your scheduler) before running.
+v1.0 will provide a built-in dispatcher.
 
 ### 2. Per-gene Poisson NMF + DE (gene-level)
 
