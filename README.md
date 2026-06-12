@@ -127,11 +127,6 @@ Rscript scripts/genome_wide/fasttopics_to_flashier.R \
 The final `softimpute_flash_300_qc_filtered.RDS` is the genome-wide
 factorisation used by every downstream Quetzal analysis.
 
-## Citation
-
-If you use Quetzal, please cite the release tag you used; machine-readable
-metadata is in [CITATION.cff](CITATION.cff).
-
 ## License
 
 MIT - see [LICENSE](LICENSE).
