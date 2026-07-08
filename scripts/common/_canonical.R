@@ -40,9 +40,16 @@ suppressPackageStartupMessages({
 }
 
 # Returns list(lower, upper, strand, chrom) or NULL if gene absent from gencode.
-.resolve_gene_coords <- function(gencode, gene_name) {
-  gene_data <- gencode[gencode$gene_name == gene_name &
-                          gencode$type     == "exon"]
+# `chr` (optional) restricts the lookup to that chromosome's exon copies --
+# critical for multi-copy gene_names like U1 (chr1 + chr21), U2 (8 chrs),
+# SNORD39 (4 chrs), where min/max across all copies span tens of Mb and
+# blow the range filter wide open.
+.resolve_gene_coords <- function(gencode, gene_name, chr = NULL) {
+  hit <- gencode$gene_name == gene_name & gencode$type == "exon"
+  if (!is.null(chr)) {
+    hit <- hit & as.character(seqnames(gencode)) == chr
+  }
+  gene_data <- gencode[hit]
   if (length(gene_data) == 0L) return(NULL)
   list(
     lower  = min(start(gene_data)),
@@ -84,8 +91,13 @@ canonicalise <- function(counts, junction_info, gene_name, gencode, opt) {
   if (is.null(rownames(counts))) rownames(counts) <- junction_info$junction_id
 
   # ---- resolve gene coords + range/strand junction filter ---------------
+  # Use the chromosome the per-gene input was built around (junction_info
+  # is homogeneous on chrom by construction) so multi-copy gene_names
+  # don't pull in exon copies from other chromosomes.
+  chr_here   <- unique(junction_info$chrom)
+  chr_query  <- if (length(chr_here) == 1L) chr_here else NULL
 
-  gene_coords <- .resolve_gene_coords(gencode, gene_name)
+  gene_coords <- .resolve_gene_coords(gencode, gene_name, chr = chr_query)
   if (is.null(gene_coords)) {
     return(.skipped(gene_name, "gene not found in gencode"))
   }

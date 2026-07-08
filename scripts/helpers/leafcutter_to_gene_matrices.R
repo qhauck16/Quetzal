@@ -30,6 +30,21 @@
 #       --gencode data/gencode_v46_granges.RDS \
 #       --output_dir data/all_genes \
 #       --gene_range_bound 2000
+#
+# Restricting output to a specific gene set (e.g. protein-coding only) so
+# multi-locus gene names like Y_RNA, U1, U2, SNORDxx don't contaminate the
+# tree -- pass --gene_list a 2-column TSV/CSV of (gene_name, chr):
+#
+#   $ head genes_protein_coding.tsv
+#   gene_name   chr
+#   BRCA1       chr17
+#   TP53        17
+#   STMN2       chr8
+#   DMD         X
+#
+# Chromosome column accepts '1', '01', 'X', 'MT' or 'chr1', 'chrX', 'chrMT'.
+# First-row header is auto-detected and dropped if present. Only (gene_name,
+# chr) pairs that match the (gene, chr) loci in gencode get written.
 
 suppressPackageStartupMessages({
   library(optparse)
@@ -51,7 +66,14 @@ option_list <- list(
   make_option("--gene_range_bound", type = "integer", default = 2000L,
               help = "bp padding around gene's exon range [%default]"),
   make_option("--min_junctions",    type = "integer", default = 1L,
-              help = "only write per-gene TSV if it has at least N junctions [%default]")
+              help = "only write per-gene TSV if it has at least N junctions [%default]"),
+  make_option("--gene_list",        type = "character", default = NA_character_,
+              help = paste0("optional 2-column TSV / CSV (gene_name, chromosome) ",
+                             "restricting which (gene, chr) loci get written. ",
+                             "Chromosome can be '1', '2', 'X', 'MT' or 'chr1', 'chr2', ",
+                             "'chrX', 'chrMT'. First-row header auto-detected and ",
+                             "dropped if present. v1.0 protein-coding-only sidestep ",
+                             "for the multi-locus snRNA / Y_RNA / pseudogene problem."))
 )
 opt <- parse_args(OptionParser(option_list = option_list))
 stopifnot(!is.null(opt$input))
@@ -72,12 +94,20 @@ ids_raw  <- dt[[id_col]]
 
 # ---- parse leafcutter junction IDs --------------------------------------
 # Format: chr:start:end:clu_<id>_<strand>
-# Start is BED-style 0-based; convert to 1-based by adding 1.
+# Leafcutter is BED-style: start is 0-based, end is exclusive (1 past the
+# last intron base). Convert to 1-based inclusive intron coords by
+# +1 to start AND -1 to end -- so the resulting (start, end) matches
+# canonical MANE intron coordinates exactly.
+# Earlier versions only did the +1 to start, which left junction end
+# one too high. Downstream effect: classify_junctions.R found zero
+# annotated matches (intron ends never aligned with MANE ends), so every
+# junction got annotated = 0 and the unann factor filter degenerated to
+# a no-op that kept every per-gene factor.
 
 parts <- str_split_fixed(ids_raw, ":", 4L)
 chrom         <- parts[, 1]
 start_1based  <- as.integer(parts[, 2]) + 1L
-end_coord     <- as.integer(parts[, 3])
+end_coord     <- as.integer(parts[, 3]) - 1L
 cluster_field <- parts[, 4]
 strand        <- str_extract(cluster_field, "[+\\-]$")
 
@@ -102,8 +132,17 @@ junction_id <- sprintf("%s:%d-%d:%s", chrom, start_1based, end_coord, strand)
 message(sprintf("loading gencode from %s ...", opt$gencode))
 gencode  <- readRDS(opt$gencode)
 exons    <- gencode[gencode$type == "exon"]
+
+# IMPORTANT: group by (gene_name, seqnames), not gene_name alone. Several
+# gene_names in gencode v46 (U1, U2, SNORD39, ...) have copies on multiple
+# chromosomes; grouping by gene_name only picks the first chr's name but
+# computes `lower = min(start)` and `upper = max(end)` across every copy,
+# blowing the per-chr filter window up to tens or hundreds of Mb (U1
+# spanned 9.6 Mb -- 121 Mb across chr1 + chr21, etc.). Grouping by
+# (gene_name, seqnames) gives one (gene, chr) row per gencode locus, with
+# bounds restricted to THAT chromosome's exons.
 gene_df  <- as.data.frame(exons) %>%
-  group_by(gene_name) %>%
+  group_by(gene_name, seqnames) %>%
   summarise(
     chr    = as.character(seqnames)[1],
     strand = as.character(strand)[1],
@@ -111,8 +150,49 @@ gene_df  <- as.data.frame(exons) %>%
     upper  = max(end),
     .groups = "drop"
   ) %>%
+  ungroup() %>%
+  select(-seqnames) %>%
   filter(!is.na(gene_name), nzchar(gene_name))
-message(sprintf("  %d unique gene_names", nrow(gene_df)))
+message(sprintf("  %d (gene_name, chr) loci across %d unique gene_names",
+                 nrow(gene_df), length(unique(gene_df$gene_name))))
+
+# ---- optional user-supplied gene list filter ----------------------------
+# Lets the caller restrict output to e.g. protein-coding genes, sidestepping
+# the multi-locus snRNA / Y_RNA / pseudogene contamination problem entirely.
+if (!is.na(opt$gene_list) && nzchar(opt$gene_list)) {
+  message(sprintf("reading gene list filter from %s ...", opt$gene_list))
+  gl <- fread(opt$gene_list, data.table = FALSE,
+               header     = "auto",
+               sep        = "auto",
+               na.strings = c("", "NA"))
+  if (ncol(gl) < 2L) {
+    stop(sprintf("gene list must have >= 2 columns (gene_name, chr); got %d in %s",
+                 ncol(gl), opt$gene_list))
+  }
+  gl <- gl[, 1:2, drop = FALSE]
+  colnames(gl) <- c("gene_name", "chr")
+
+  # Normalize: trim whitespace + add 'chr' prefix where missing (accepts
+  # '1', '01', 'X', 'MT' as well as 'chr1', 'chrX', 'chrMT').
+  gl$gene_name <- trimws(as.character(gl$gene_name))
+  gl$chr       <- trimws(as.character(gl$chr))
+  needs_prefix <- !grepl("^chr", gl$chr, ignore.case = TRUE)
+  gl$chr[needs_prefix] <- paste0("chr", gl$chr[needs_prefix])
+  gl$chr <- sub("^Chr", "chr", gl$chr)
+  gl <- gl[!is.na(gl$gene_name) & nzchar(gl$gene_name) &
+            !is.na(gl$chr)       & nzchar(gl$chr), , drop = FALSE]
+  gl <- unique(gl)
+
+  before <- nrow(gene_df)
+  gene_df <- inner_join(gene_df, gl, by = c("gene_name", "chr"))
+  unmatched <- nrow(gl) - nrow(gene_df)
+  message(sprintf("  gene list: %d entries; %d matched gencode (gene_df %d -> %d)",
+                   nrow(gl), nrow(gene_df), before, nrow(gene_df)))
+  if (unmatched > 0L) {
+    message(sprintf("  (%d list entries had no matching (gene_name, chr) in gencode -- skipped)",
+                     unmatched))
+  }
+}
 
 # ---- per-chr index over the junction set --------------------------------
 

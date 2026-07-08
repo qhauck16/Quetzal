@@ -110,8 +110,13 @@ rownames(counts) <- junction_id
 colnames(counts) <- sample_ids
 
 # Parse junction_id "chr:start-end:strand" into components.
+# IMPORTANT: dash must be FIRST inside the strand char class so POSIX ERE
+# (which regexec uses by default) treats it as a literal '-' rather than
+# part of an invalid range. The earlier `[+\\-\\*]` form silently dropped
+# '-' from the class, so every '-' strand junction failed to match and
+# every '-' strand gene's matrix became a skipped stub.
 m <- regmatches(junction_id,
-                 regexec("^([^:]+):([0-9]+)-([0-9]+):([+\\-\\*])$", junction_id))
+                 regexec("^([^:]+):([0-9]+)-([0-9]+):([-+*])$", junction_id))
 bad <- vapply(m, function(x) length(x) == 0L, logical(1L))
 if (any(bad)) {
   write_result(.skipped(opt$gene_name,

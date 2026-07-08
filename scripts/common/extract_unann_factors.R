@@ -130,14 +130,24 @@ if (isTRUE(opt$filter_unannotated)) {
 multi <- poisson2multinom(res)
 L     <- as.data.frame(multi$L[, keep, drop = FALSE])
 gene  <- res$gene_name %||% mat$gene_name
-colnames(L) <- paste0(gene, ".k", which(keep))
+chr   <- mat$gene_chrom %||% ""
+
+# Feature name = "<chr>.<gene>.k<N>". The chr prefix is what guarantees
+# distinct column names across the genome-wide gather step even when
+# multiple per-(gene_name, chr) loci feed in (multi-locus gene_names like
+# Metazoa_SRP / Y_RNA / SNORDxx used to silently collide -- softimpute_flash
+# emitted columns like 'Metazoa_SRP.k30.y.y.y' because dplyr appends '.y'
+# on every join-side duplicate). With chr in the name, no collisions
+# possible.
+prefix <- if (nzchar(chr)) paste0(chr, ".", gene) else gene
+colnames(L) <- paste0(prefix, ".k", which(keep))
 
 out <- L %>%
   rownames_to_column("sample_id") %>%
   as_tibble()
 
 write_tsv(out, opt$output)
-message(sprintf("  [ok %s] kept %d / %d factors (%s) [filter_unannotated=%s]; wrote %s",
-                 gene, sum(keep), length(keep),
+message(sprintf("  [ok %s.%s] kept %d / %d factors (%s) [filter_unannotated=%s]; wrote %s",
+                 chr, gene, sum(keep), length(keep),
                  paste(which(keep), collapse = ","),
                  opt$filter_unannotated, opt$output))

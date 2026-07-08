@@ -91,10 +91,37 @@ if (length(per_gene) == 0L) {
   stop("no gene passed the sample_fraction filter")
 }
 
+# ---- defensive collision check (single-pass O(n)) -----------------------
+# extract_unann_factors.R writes feature columns as "<chr>.<gene>.k<N>".
+# That should be unique across every per-gene TSV, but if anything
+# upstream regresses and emits collisions, dplyr's full_join silently
+# appends '.y', '.y.y', ... to the colliding column and we'd ship a
+# corrupted flashier matrix. Catch it loudly here instead.
+all_feature_cols <- unlist(
+  lapply(per_gene, function(d) setdiff(colnames(d), "sample_id")),
+  use.names = FALSE
+)
+dup_mask <- duplicated(all_feature_cols)
+if (any(dup_mask)) {
+  dup <- unique(all_feature_cols[dup_mask])
+  stop(sprintf("duplicate feature column names across per-gene TSVs (first 5 of %d): %s\n",
+                length(dup), paste(head(dup, 5L), collapse = ", ")),
+       "  Each (gene, chr) locus must emit unique feature names; check ",
+       "extract_unann_factors.R for missing chr prefix.")
+}
+
 # ---- full_join into one sample x feature matrix --------------------------
 
 big <- tibble(sample_id = all_samples)
 for (d in per_gene) big <- full_join(big, d, by = "sample_id")
+
+# Belt-and-braces: catch any post-join '.y' / '.x' suffixes dplyr may have
+# manufactured. The collision pre-check above should make this dead code.
+dup_sfx <- grep("\\.y$|\\.x$|\\.y\\.y", colnames(big), value = TRUE)
+if (length(dup_sfx) > 0L) {
+  stop(sprintf("full_join produced suffix-mangled columns (first 5): %s",
+                paste(head(dup_sfx, 5L), collapse = ", ")))
+}
 
 feature_df <- as.data.frame(big[, -1L, drop = FALSE])
 rownames(feature_df) <- big$sample_id
