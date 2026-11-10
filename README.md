@@ -8,9 +8,9 @@ sample × factor matrices that surface cohort-driving splicing programs
 v1.0 generalises Quetzal beyond TCGA+Snaptron: it runs on user-supplied
 per-gene junction matrices in addition to snaptron's TSVs, drops every
 TCGA-specific QC step, and lets you opt in (or out) of normal-sample
-filtering and structure-plot grouping via a single configfile. v0.1
-(the manuscript build) is frozen at the `v0.1.0` tag —
-`git checkout v0.1.0` if you need that exact pipeline.
+filtering and structure-plot grouping via a single configfile. The
+manuscript's results were generated with Quetzal **v0.1.1** —
+`git checkout v0.1.1` for that exact pipeline.
 
 ## Quickstart
 
