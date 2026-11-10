@@ -116,7 +116,7 @@ for (chr in chrs) {
     snap <- fread(snap_path) %>% filter(annotated == 1)
     annotated_juncs <- paste0(snap$start, "-", snap$end)
 
-    unn_F <- as.matrix(res$F[!rownames(res$F) %in% annotated_juncs, , drop = FALSE])
+    unn_F <- as.matrix(res$F[!rownames(res$F) %in% annotated_juncs, ])  # reverted to match manuscript run
     if (nrow(unn_F) == 0L) next
 
     factor_max_unn   <- apply(unn_F, 2, max)

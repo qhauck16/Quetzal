@@ -6,7 +6,7 @@ junctions. Quetzal recovers known splicing-factor mutation programs
 cohort-specific factors as a single sample x factor matrix that plugs
 into downstream alternative-splicing analyses.
 
-This repository is the **v0.1** release used for the manuscript. The
+This repository is the **v0.1.1** release; the manuscript's results were generated with Quetzal v0.1.1. The
 pipelines and reference data here are TCGA-specific; v1.0 will generalise
 the sample-metadata assumptions.
 
