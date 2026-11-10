@@ -69,6 +69,14 @@ normal_filter:
 # When null the structure plot draws one ungrouped block.
 structure_plot_grouping_column: null
 
+# ---------- gene_level plotting ----------
+# Set false to stop each gene at res.RDS + de_res.RDS and skip the per-gene
+# structure plot / whole_factor.html / de_factor.html (much faster on a
+# genome-scale gene_level run).
+make_plots: true
+# RNG seed for the structure plot's sample subsampling and ordering.
+plot_seed: 1
+
 # ---------- genome_wide specific ----------
 # When true (default, v0.1 behaviour) only factors loading mostly on
 # UNANNOTATED junctions are kept and fed into the softimpute + flashier

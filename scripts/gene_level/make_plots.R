@@ -24,6 +24,7 @@
 #
 # DE thresholds (used to gate the de_factor.html junction arcs):
 #   --lfc_thresh, --abs_thresh, --sval_thresh
+#   --seed             : RNG seed for the structure plot [1]
 
 # null-coalesce helper.
 `%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -63,7 +64,9 @@ option_list <- list(
   make_option("--grouping_column",  type = "character", default = NA_character_),
   make_option("--lfc_thresh",   type = "double", default = 2),
   make_option("--abs_thresh",   type = "double", default = 0.01),
-  make_option("--sval_thresh",  type = "double", default = 0.05)
+  make_option("--sval_thresh",  type = "double", default = 0.05),
+  make_option("--seed",         type = "integer", default = 1L,
+              help = "RNG seed for structure_plot's sample subsampling/ordering [%default]")
 )
 opt <- parse_args(OptionParser(option_list = option_list))
 stopifnot(!is.null(opt$res), !is.null(opt$matrix),
@@ -159,6 +162,9 @@ palet_labels <- setNames(palet, as.character(seq_len(length(palet))))
 
 # ---- structure plot -----------------------------------------------------
 
+# structure_plot subsamples (n = 5000) and orders samples randomly; seed it so
+# the same gene draws the same plot on every run.
+set.seed(opt$seed)
 struc_plot <- structure_plot(multi,
                               grouping = grouping_vec,
                               gap      = 100,

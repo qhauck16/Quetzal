@@ -38,7 +38,7 @@ either mode.
 
 | Mode | Question it answers | Driver | Final output |
 | --- | --- | --- | --- |
-| **gene_level** | "For one specific gene, what are its factorised splicing programs?" -- per-gene plots and DE results for visual inspection | `scripts/gene_level/Snakefile` | `output/gene_level/<chr>/<gene>/whole_factor.html` (+ `res.RDS`, `de_res.RDS`, `de_factor.html`) |
+| **gene_level** | "For one specific gene, what are its factorised splicing programs?" -- per-gene plots and DE results for visual inspection | `scripts/gene_level/Snakefile` | `output/gene_level/<chr>/<gene>/whole_factor.html` (+ `res.RDS`, `de_res.RDS`, `de_factor.html`); with `make_plots: false`, stops at `res.RDS` + `de_res.RDS` |
 | **genome_wide** | "What are the cohort-driving splicing programs across all genes?" -- one sample × factor matrix that covers the entire input | `scripts/genome_wide/Snakefile` | `output/genome_wide/softimpute_flash.RDS` (+ per-gene `res.RDS`, `unann_factors.tsv`) |
 
 Both fit independent Poisson NMFs per gene. The gene_level mode caps
@@ -163,6 +163,10 @@ normal_filter:
 # gene_level structure-plot grouping (optional)
 structure_plot_grouping_column: null
 
+# gene_level plotting
+make_plots: true   # false: stop at res.RDS + de_res.RDS, no structure plot / HTML
+plot_seed:  1      # seed for the structure plot's sample subsampling + ordering
+
 # genome_wide
 filter_unannotated:           true   # keep only factors loading on unannotated junctions
 unann_factor_loading_ratio:   2.0
@@ -181,6 +185,8 @@ for cluster fan-out.
 # gene_level
 cd scripts/gene_level
 snakemake --configfile ../../config/default_config.yaml --use-conda --jobs <N>
+# ...factors + DE only, no per-gene plots (faster for many genes):
+snakemake --configfile ../../config/default_config.yaml --config make_plots=false --use-conda --jobs <N>
 
 # genome_wide
 cd scripts/genome_wide

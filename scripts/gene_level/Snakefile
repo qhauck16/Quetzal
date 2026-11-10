@@ -8,6 +8,7 @@
 #   de_analysis         : (matrix, res) -> de_res.RDS
 #   make_plots          : (res, de_res, matrix, gencode) -> whole_factor.html
 #                                                          + de_factor.html
+#                         (skipped entirely when config make_plots: false)
 #
 # Run from <repo>/scripts/gene_level/:
 #   snakemake --configfile ../../config/default_config.yaml --use-conda --jobs N
@@ -116,9 +117,15 @@ NORMAL_FILTER_ARGS = _normal_filter_argstring()
 # ---------------- RULES -------------------
 ############################################
 
+# make_plots: false stops each gene at de_res.RDS (no structure plot / HTML).
+# (--config make_plots=false arrives as the STRING "false", and bool("false") is True.)
+_mp        = config.get("make_plots", True)
+MAKE_PLOTS = _mp if isinstance(_mp, bool) else str(_mp).strip().lower() not in ("false", "0", "no", "off")
+FINAL      = "whole_factor.html" if MAKE_PLOTS else "de_res.RDS"
+
 rule all:
     input:
-        expand(OUT + "/{chr}/{gene}/whole_factor.html",
+        expand(OUT + "/{chr}/{gene}/" + FINAL,
                 zip, chr=CHRS, gene=GENES)
 
 
@@ -250,7 +257,8 @@ rule make_plots:
         grouping_column  = (config.get("structure_plot_grouping_column") or ""),
         lfc_thresh       = config.get("lfc_thresh", 2),
         abs_thresh       = config.get("abs_thresh", 0.01),
-        sval_thresh      = config.get("sval_thresh", 0.05)
+        sval_thresh      = config.get("sval_thresh", 0.05),
+        plot_seed        = config.get("plot_seed", 1)
     conda:
         "envs/rscript.yml"
     threads: 2
@@ -271,5 +279,6 @@ rule make_plots:
             --grouping_column "{params.grouping_column}" \\
             --lfc_thresh {params.lfc_thresh} \\
             --abs_thresh {params.abs_thresh} \\
-            --sval_thresh {params.sval_thresh}
+            --sval_thresh {params.sval_thresh} \\
+            --seed {params.plot_seed}
         """
